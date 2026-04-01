@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../core/models/invoice.dart';
 import '../../core/utils/price_formatter.dart';
-import '../../data/repository_providers.dart';
+import '../../data/sales_repository.dart';
 import '../auth/auth_provider.dart';
 import '../billing/billing_providers.dart';
 import '../products/products_providers.dart';
@@ -24,8 +23,6 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
   String? _error;
 
   Future<void> _checkout() async {
-    final auth = ref.read(authProvider);
-    if (auth == null) return;
     final lines = ref.read(cartProvider);
     if (lines.isEmpty) return;
 
@@ -35,20 +32,7 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
     });
 
     try {
-      final invRepo = ref.read(invoicesRepositoryProvider);
-      final id = const Uuid().v4();
-      final saleLines = [
-        for (final l in lines) (product: l.product, qty: l.quantity),
-      ];
-      final inv = await invRepo.recordSale(
-        companyId: auth.companyId,
-        invoiceId: id,
-        lines: saleLines,
-      );
-      if (inv == null) {
-        setState(() => _error = 'Stock insuffisant pour au moins une ligne.');
-        return;
-      }
+      final inv = await ref.read(salesRepositoryProvider).checkout(cart: lines);
       ref.read(cartProvider.notifier).clear();
       ref.invalidate(productsListProvider);
       ref.read(salesRefreshProvider.notifier).state++;

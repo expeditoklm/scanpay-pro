@@ -5,6 +5,8 @@ class Product {
     required this.name,
     required this.price,
     required this.stock,
+    this.sku,
+    this.description,
     this.referenceImagePath,
   });
 
@@ -13,6 +15,8 @@ class Product {
   final String name;
   final double price;
   final int stock;
+  final String? sku;
+  final String? description;
   final String? referenceImagePath;
 
   Product copyWith({
@@ -21,6 +25,8 @@ class Product {
     String? name,
     double? price,
     int? stock,
+    String? sku,
+    String? description,
     String? referenceImagePath,
   }) {
     return Product(
@@ -29,6 +35,8 @@ class Product {
       name: name ?? this.name,
       price: price ?? this.price,
       stock: stock ?? this.stock,
+      sku: sku ?? this.sku,
+      description: description ?? this.description,
       referenceImagePath: referenceImagePath ?? this.referenceImagePath,
     );
   }
@@ -39,6 +47,8 @@ class Product {
         'name': name,
         'price': price,
         'stock': stock,
+        'sku': sku,
+        'description': description,
         'referenceImagePath': referenceImagePath,
       };
 
@@ -49,6 +59,8 @@ class Product {
       name: json['name'] as String,
       price: (json['price'] as num).toDouble(),
       stock: (json['stock'] as num).toInt(),
+      sku: json['sku'] as String?,
+      description: json['description'] as String?,
       referenceImagePath: json['referenceImagePath'] as String?,
     );
   }

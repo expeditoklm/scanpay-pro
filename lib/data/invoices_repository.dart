@@ -17,10 +17,18 @@ class InvoicesRepository {
     required String invoiceId,
     required List<({Product product, int qty})> lines,
   }) async {
+    // Décrémenter le stock pour chaque ligne
     for (final line in lines) {
-      final ok = await _products.decrementStock(companyId, line.product.id, line.qty);
-      if (ok == null) return null;
+      final ok = await _products.decrementStock(
+          companyId, line.product.id, line.qty);
+      if (ok == null) {
+        // ignore: avoid_print
+        print('[STOCK] ✗ Impossible de décrémenter ${line.product.name} x${line.qty}');
+        // On continue quand même — la vente s'enregistre,
+        // la sync ERP via webhook met à jour le vrai stock
+      }
     }
+
     final inv = Invoice(
       id: invoiceId,
       companyId: companyId,

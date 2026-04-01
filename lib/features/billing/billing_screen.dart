@@ -14,36 +14,87 @@ class BillingScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final invoices = ref.watch(invoicesListProvider);
+    final invoicesAsync = ref.watch(invoicesListProvider);
 
-    if (invoices.isEmpty) {
-      return const Center(
+    return invoicesAsync.when(
+      // ── Chargement ──────────────────────────────────────────────────────
+      loading: () => const Center(child: CircularProgressIndicator()),
+
+      // ── Erreur ──────────────────────────────────────────────────────────
+      error: (e, _) => Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text('Aucune facture pour l’instant. Validez une vente depuis la caisse.'),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off, size: 48, color: Colors.orange),
+              const SizedBox(height: 12),
+              Text('Impossible de charger les ventes\n$e',
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => ref.invalidate(invoicesListProvider),
+                child: const Text('Réessayer'),
+              ),
+            ],
+          ),
         ),
-      );
-    }
+      ),
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: invoices.length,
-      itemBuilder: (context, i) {
-        final inv = invoices[i];
-        return Card(
-          child: ListTile(
-            title: Text('Facture ${inv.id.substring(0, 8)}…'),
-            subtitle: Text('${_dateFmt.format(inv.createdAt)} · ${inv.lines.length} ligne(s)'),
-            trailing: Text(formatPriceEuro(inv.total)),
-            onTap: () {
-              Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => Scaffold(
-                    appBar: AppBar(title: const Text('Aperçu PDF')),
-                    body: PdfPreview(
-                      build: (format) => buildInvoicePdf(inv, format),
-                    ),
+      // ── Données ─────────────────────────────────────────────────────────
+      data: (invoices) {
+        if (invoices.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.receipt_long_outlined, size: 48),
+                  SizedBox(height: 12),
+                  Text(
+                    'Aucune vente pour l\'instant.\nValidez une vente depuis la caisse.',
+                    textAlign: TextAlign.center,
                   ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(invoicesListProvider),
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: invoices.length,
+            itemBuilder: (context, i) {
+              final inv = invoices[i];
+              final shortId = inv.id.length >= 8
+                  ? inv.id.substring(0, 8)
+                  : inv.id;
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.receipt_outlined),
+                  title: Text('Facture $shortId…'),
+                  subtitle: Text(
+                    '${_dateFmt.format(inv.createdAt)} · ${inv.lines.length} article(s)',
+                  ),
+                  trailing: Text(
+                    formatPriceEuro(inv.total),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Aperçu PDF')),
+                          body: PdfPreview(
+                            build: (format) => buildInvoicePdf(inv, format),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
             },

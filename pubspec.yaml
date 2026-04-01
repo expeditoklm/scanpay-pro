@@ -11,6 +11,9 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.6.1
+  file_picker: ^8.1.7
+  csv: ^6.0.0
+  http: ^1.2.2
   qr_flutter: ^4.1.0
   mobile_scanner: ^6.0.2
   crypto: ^3.0.6

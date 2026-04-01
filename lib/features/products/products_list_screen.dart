@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/price_formatter.dart';
+import 'import_products_screen.dart';
 import 'product_form_screen.dart';
 import 'products_providers.dart';
 import 'product_detail_screen.dart';
@@ -49,13 +50,24 @@ class ProductsListScreen extends ConsumerWidget {
               if (i == 0) {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.icon(
-                      onPressed: () => _openForm(context, ref),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Nouveau produit'),
-                    ),
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(builder: (_) => const ImportProductsScreen()),
+                        ),
+                        icon: const Icon(Icons.upload_file),
+                        label: const Text('Importer CSV'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: () => _openForm(context, ref),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Nouveau produit'),
+                      ),
+                    ],
                   ),
                 );
               }

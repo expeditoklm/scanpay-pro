@@ -31,6 +31,14 @@ class InMemoryProductsRepository implements ProductsRepository {
   }
 
   @override
+  Future<void> bulkUpsert(String companyId, List<Product> products) async {
+    for (final p in products) {
+      if (p.companyId != companyId) continue;
+      await upsert(p);
+    }
+  }
+
+  @override
   Future<void> delete(String companyId, String productId) async {
     _byKey.remove(_key(companyId, productId));
   }

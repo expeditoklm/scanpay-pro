@@ -53,12 +53,65 @@ Le fichier est sous `build\app\outputs\flutter-apk\app-debug.apk` (à installer 
 
 1. **Connexion** : gardez les valeurs par défaut ou le même `Company ID` partout.
 2. **Produits** : créez un produit (prix, stock), ajoutez une **photo de référence** pour tester l’anti-fraude.
+   - Ou importez vos produits en masse via **Importer CSV**.
 3. Ouvrez le produit : affichez le **QR** (JSON signé HMAC).
 4. **Caisse** → **Scanner un QR** : scannez l’écran ou un QR imprimé ; option anti-fraude puis ajout au panier.
 5. **Encaisser** → **Valider la vente** : PDF de facture ; les **Stocks** et **Factures** se mettent à jour.
+
+## Import initial de 2000 produits (CSV/Excel)
+
+### Option la plus simple: CSV
+
+1. Exportez vos produits depuis le système existant (ERP/logiciel caisse/Excel) en **CSV**.
+2. Dans l’app: onglet **Produits** → **Importer CSV**.
+3. L’app valide puis fait un **bulk upsert** scoppé par `companyId` (multi-tenant).
+
+### Format CSV attendu
+
+En-têtes obligatoires:
+- `name`
+- `price`
+- `stock`
+
+Colonnes optionnelles:
+- `id` (si vous voulez réutiliser un identifiant interne)
+- `sku` (recommandé pour relier facilement au système existant)
+- `description`
+
+Exemple:
+
+```csv
+id,sku,name,price,stock,description
+P-0001,SKU-123,Coca 33cl,0.80,120,Canette
+P-0002,SKU-999,Eau 1.5L,0.60,80,Bouteille
+```
+
+Notes:
+- `companyId` **n’est jamais lu depuis le fichier** : il est appliqué par la session (isolation SaaS).
+- `price` accepte `0.80` ou `0,80`.
+
+## Synchronisation du stock avec le système existant (API)
+
+### Stratégie recommandée (production)
+
+- **Checkout côté serveur (Cloud Functions)**:
+  - L’app envoie la vente (companyId + lignes: productId/sku + qty).
+  - La Cloud Function:
+    - décrémente le stock dans Firestore (transaction)
+    - appelle l’API du système existant (webhook/ERP) avec une authentification (bearer/HMAC)
+    - retourne un statut OK/KO à l’app
+
+Pourquoi: évite les divergences si un téléphone est hors-ligne ou compromis.
+
+### Ce qui est déjà prêt dans le code
+
+- **Import CSV**: `lib/features/products/import_products_screen.dart` + `lib/core/utils/csv_products_parser.dart`
+- **Bulk upsert**: `ProductsRepository.bulkUpsert(companyId, products)`
+- **Flux checkout**: `lib/data/sales_repository.dart` (démo local)
+- **Hook API** (optionnel): `ExternalStockSync` (`lib/core/services/external_stock_sync.dart`)
 
 ## Passer à Firebase (plus tard)
 
 - Ajoutez `firebase_core`, `cloud_firestore`, `firebase_auth`, etc.
 - Remplacez `InMemoryProductsRepository` par une implémentation Firestore avec chemins du type `companies/{companyId}/products/...`.
-- Les opérations critiques de stock devraient idéalement passer par **Cloud Functions**.
+- Les opérations critiques de stock devraient idéalement passer par **Cloud Functions** + appel à l’API du système existant.

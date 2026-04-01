@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'app.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialise les formats de date (fr_FR) pour la facture PDF
+  await initializeDateFormatting('fr_FR', null);
   runApp(const ProviderScope(child: TpeQrSaasApp()));
 }
