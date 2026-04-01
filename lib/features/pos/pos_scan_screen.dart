@@ -110,7 +110,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     await _controller.stop();
 
     Product? toAdd = product;
-    if (product.referenceImagePath != null) {
+    if ((product.referenceImagePath ?? '').isNotEmpty) {
       final ok = await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,

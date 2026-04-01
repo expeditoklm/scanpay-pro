@@ -5,7 +5,6 @@
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
 
 import '../core/models/product.dart';
 import 'products_repository.dart';
@@ -19,7 +18,6 @@ class ErpProductsRepository implements ProductsRepository {
       : _client = client ?? http.Client();
 
   final http.Client _client;
-  final _uuid = const Uuid();
 
   // Cache local pour éviter trop d'appels réseau
   final Map<String, Product> _cache = {};
@@ -85,6 +83,30 @@ class ErpProductsRepository implements ProductsRepository {
     }
   }
 
+  @override
+  Future<ProductsPage> listProductsPage({
+    required String companyId,
+    required int limit,
+    String? startAfterName,
+    String? startAfterId,
+  }) async {
+    // ERP actuel: pas d’endpoint pagination → fallback en mémoire.
+    final all = await listProducts(companyId);
+    var startIndex = 0;
+    if (startAfterName != null && startAfterId != null) {
+      startIndex = all.indexWhere((p) => p.name == startAfterName && p.id == startAfterId);
+      if (startIndex >= 0) startIndex++;
+      if (startIndex < 0) startIndex = 0;
+    }
+    final slice = all.skip(startIndex).take(limit).toList();
+    final next = slice.isEmpty
+        ? null
+        : (startIndex + slice.length >= all.length)
+            ? null
+            : ProductsCursor(name: slice.last.name, id: slice.last.id);
+    return ProductsPage(items: slice, nextCursor: next);
+  }
+
   // ── GET BY ID ─────────────────────────────────────────────────────────────
   @override
   Future<Product?> getById(String companyId, String productId) async {
@@ -105,6 +127,34 @@ class ErpProductsRepository implements ProductsRepository {
     } catch (_) {
       return _cache[productId];
     }
+  }
+
+  @override
+  Future<Product?> getBySku(String companyId, String sku) async {
+    final s = sku.trim();
+    if (s.isEmpty) return null;
+    for (final p in _cache.values) {
+      if (p.companyId == companyId && (p.sku ?? '') == s) return p;
+    }
+    final all = await listProducts(companyId);
+    for (final p in all) {
+      if ((p.sku ?? '') == s) return p;
+    }
+    return null;
+  }
+
+  @override
+  Future<Product?> getByConsumerCode(String companyId, String consumerCode) async {
+    final c = consumerCode.trim();
+    if (c.isEmpty) return null;
+    for (final p in _cache.values) {
+      if (p.companyId == companyId && (p.consumerCode ?? '') == c) return p;
+    }
+    final all = await listProducts(companyId);
+    for (final p in all) {
+      if ((p.consumerCode ?? '') == c) return p;
+    }
+    return null;
   }
 
   // ── UPSERT (créer ou modifier) ────────────────────────────────────────────

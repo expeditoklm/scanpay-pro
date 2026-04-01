@@ -7,17 +7,28 @@ import 'product_form_screen.dart';
 import 'products_providers.dart';
 import 'product_detail_screen.dart';
 
+final _productsQueryProvider = StateProvider.autoDispose<String>((ref) => '');
+
 class ProductsListScreen extends ConsumerWidget {
   const ProductsListScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(productsListProvider);
+    final query = ref.watch(_productsQueryProvider);
+    final q = query.trim().toLowerCase();
 
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Erreur: $e')),
       data: (products) {
+        final visible = q.isEmpty
+            ? products
+            : products.where((p) {
+                final sku = (p.sku ?? '').toLowerCase();
+                return p.name.toLowerCase().contains(q) || sku.contains(q);
+              }).toList();
+
         if (products.isEmpty) {
           return Center(
             child: Padding(
@@ -45,7 +56,7 @@ class ProductsListScreen extends ConsumerWidget {
           onRefresh: () async => ref.invalidate(productsListProvider),
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: products.length + 1,
+            itemCount: visible.length + 2,
             itemBuilder: (context, i) {
               if (i == 0) {
                 return Padding(
@@ -55,6 +66,17 @@ class ProductsListScreen extends ConsumerWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      SizedBox(
+                        width: 260,
+                        child: TextField(
+                          onChanged: (v) => ref.read(_productsQueryProvider.notifier).state = v,
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search),
+                            labelText: 'Rechercher',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
                       OutlinedButton.icon(
                         onPressed: () => Navigator.of(context).push<void>(
                           MaterialPageRoute(builder: (_) => const ImportProductsScreen()),
@@ -71,7 +93,17 @@ class ProductsListScreen extends ConsumerWidget {
                   ),
                 );
               }
-              final p = products[i - 1];
+              // Footer (évite RangeError quand la liste est filtrée)
+              if (i == visible.length + 1) {
+                return const SizedBox(height: 24);
+              }
+              if (visible.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.only(top: 16),
+                  child: Center(child: Text('Aucun résultat')),
+                );
+              }
+              final p = visible[i - 1];
               return Card(
                 child: ListTile(
                   leading: CircleAvatar(

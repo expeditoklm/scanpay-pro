@@ -8,6 +8,8 @@ import '../../core/models/product.dart';
 import '../../core/utils/price_formatter.dart';
 import '../../core/utils/qr_hmac.dart';
 import '../auth/auth_provider.dart';
+import 'product_edit_screen.dart';
+import 'product_image_edit_screen.dart';
 
 class ProductDetailScreen extends ConsumerWidget {
   const ProductDetailScreen({super.key, required this.product});
@@ -19,20 +21,53 @@ class ProductDetailScreen extends ConsumerWidget {
     final auth = ref.watch(authProvider);
     if (auth == null) return const SizedBox.shrink();
 
+    final consumerCode = (product.consumerCode ?? '').trim();
     final payload = QrPayload(
       version: 1,
       productId: product.id,
       companyId: product.companyId,
+      consumerCode: consumerCode,
+      referenceImageHash: product.referenceImageHash,
       signatureHex: hmacSignProductCompany(
         productId: product.id,
         companyId: product.companyId,
+        consumerCode: consumerCode,
+        referenceImageHash: product.referenceImageHash,
         secretKey: auth.secretKey,
       ),
     );
     final qrData = encodeQrJson(payload);
 
     return Scaffold(
-      appBar: AppBar(title: Text(product.name)),
+      appBar: AppBar(
+        title: Text(product.name),
+        actions: [
+          IconButton(
+            tooltip: 'Modifier image',
+            onPressed: () async {
+              final ok = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(builder: (_) => ProductImageEditScreen(product: product)),
+              );
+              if (ok == true && context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            icon: const Icon(Icons.image_outlined),
+          ),
+          IconButton(
+            tooltip: 'Modifier',
+            onPressed: () async {
+              final ok = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(builder: (_) => ProductEditScreen(product: product)),
+              );
+              if (ok == true && context.mounted) {
+                Navigator.of(context).pop(); // revenir à la liste (qui se rafraîchit)
+              }
+            },
+            icon: const Icon(Icons.edit),
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -54,6 +89,10 @@ class ProductDetailScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             Text('QR sécurisé (HMAC)', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
+            if (consumerCode.isNotEmpty) ...[
+              Text('Code produit: $consumerCode', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+            ],
             Center(
               child: Container(
                 padding: const EdgeInsets.all(16),
