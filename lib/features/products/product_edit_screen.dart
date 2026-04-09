@@ -73,6 +73,7 @@ class _ProductEditScreenState extends ConsumerState<ProductEditScreen> {
 
     try {
       final repo = ref.read(productsRepositoryProvider);
+      final erpRepo = ref.read(erpProductsRepositoryProvider);
       final imgService = ref.read(productImageServiceProvider);
       final price = double.parse(_priceCtrl.text.replaceAll(',', '.'));
       final stock = int.parse(_stockCtrl.text.trim());
@@ -94,7 +95,15 @@ class _ProductEditScreenState extends ConsumerState<ProductEditScreen> {
         referenceImageHash: persisted?.sha256 ?? widget.product.referenceImageHash,
       );
 
-      await repo.upsert(updated);
+      final savedProduct = await repo.upsert(updated);
+      if (_imagePath != null && _imagePath!.isNotEmpty) {
+        await erpRepo.uploadProductImage(
+          companyId: widget.product.companyId,
+          productId: savedProduct.id,
+          sourcePath: _imagePath!,
+          referenceImageHash: persisted?.sha256 ?? widget.product.referenceImageHash,
+        );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Image et produit sauvegardés')),
@@ -204,4 +213,3 @@ class _ProductEditScreenState extends ConsumerState<ProductEditScreen> {
     );
   }
 }
-

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/csv_products_parser.dart';
+import '../../core/utils/spreadsheet_products_parser.dart';
 import '../../data/repository_providers.dart';
 import '../auth/auth_provider.dart';
 import 'products_providers.dart';
@@ -30,54 +31,83 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
     });
 
     try {
-      final res = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const ['csv'],
+        allowedExtensions: const ['csv', 'xlsx'],
         withData: true,
       );
-      if (res == null || res.files.isEmpty) return;
-      final bytes = res.files.first.bytes;
-      if (bytes == null) {
-        setState(() => _errors = const ['Impossible de lire le fichier (bytes null).']);
+      if (result == null || result.files.isEmpty) {
         return;
       }
 
-      final parsed = parseProductsCsvBytes(bytes: bytes, companyId: auth.companyId);
+      final file = result.files.first;
+      final bytes = file.bytes;
+      if (bytes == null) {
+        setState(() {
+          _errors = const ['Impossible de lire le fichier sélectionné.'];
+        });
+        return;
+      }
+
+      final extension = (file.extension ?? '').toLowerCase();
+      final parsed = extension == 'xlsx'
+          ? parseProductsSpreadsheetBytes(
+              bytes: bytes,
+              companyId: auth.companyId,
+            )
+          : parseProductsCsvBytes(
+              bytes: bytes,
+              companyId: auth.companyId,
+            );
+
       if (parsed.errors.isNotEmpty) {
         setState(() => _errors = parsed.errors);
-        return;
+        if (parsed.products.isEmpty) {
+          return;
+        }
       }
 
       final repo = ref.read(productsRepositoryProvider);
       await repo.bulkUpsert(auth.companyId, parsed.products);
       ref.invalidate(productsListProvider);
-      setState(() => _imported = parsed.products.length);
-    } catch (e) {
-      setState(() => _errors = [e.toString()]);
+
+      if (!mounted) return;
+      setState(() {
+        _imported = parsed.products.length;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errors = [error.toString()];
+      });
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Importer des produits (CSV)')),
+      appBar: AppBar(title: const Text('Importer des produits')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Format CSV attendu (en-têtes obligatoires): name, price, stock.\n'
-              'Optionnel: id, sku, description.\n'
-              'Le companyId est appliqué automatiquement (multi-tenant).',
+              'Formats acceptés: CSV et Excel (.xlsx).\n'
+              'Colonnes obligatoires: name, price, stock.\n'
+              'Colonnes optionnelles: sku, description.',
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _loading ? null : _pickAndImport,
               icon: const Icon(Icons.upload_file),
-              label: _loading ? const Text('Import en cours...') : const Text('Choisir un CSV et importer'),
+              label: Text(
+                _loading ? 'Import en cours...' : 'Choisir un fichier',
+              ),
             ),
             if (_loading) ...[
               const SizedBox(height: 12),
@@ -85,16 +115,22 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
             ],
             if (_imported > 0) ...[
               const SizedBox(height: 12),
-              Text('Import terminé: $_imported produit(s).', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Import terminé: $_imported produit(s).',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ],
             if (_errors.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text('Erreurs:', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                'Erreurs détectées:',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               const SizedBox(height: 8),
               Expanded(
                 child: ListView.builder(
                   itemCount: _errors.length,
-                  itemBuilder: (context, i) => Text('• ${_errors[i]}'),
+                  itemBuilder: (context, index) => Text('• ${_errors[index]}'),
                 ),
               ),
             ] else
@@ -105,4 +141,3 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
     );
   }
 }
-

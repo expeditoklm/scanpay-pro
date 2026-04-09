@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/product.dart';
+import '../../core/utils/product_image.dart';
 import '../../data/repository_providers.dart';
 
 class ProductImageEditScreen extends ConsumerStatefulWidget {
@@ -42,6 +43,7 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
 
     try {
       final img = ref.read(productImageServiceProvider);
+      final erpRepo = ref.read(erpProductsRepositoryProvider);
       final saved = await img.persistReferenceImage(
         companyId: widget.product.companyId,
         productId: widget.product.id,
@@ -54,6 +56,12 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
           referenceImagePath: saved.path,
           referenceImageHash: saved.sha256,
         ),
+      );
+      await erpRepo.uploadProductImage(
+        companyId: widget.product.companyId,
+        productId: widget.product.id,
+        sourcePath: tmp,
+        referenceImageHash: saved.sha256,
       );
 
       if (!mounted) return;
@@ -70,8 +78,6 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
 
   @override
   Widget build(BuildContext context) {
-    final current = widget.product.referenceImagePath;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Modifier image')),
       body: Padding(
@@ -87,12 +93,14 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
                 aspectRatio: 4 / 3,
                 child: _tmpPath != null
                     ? Image.file(File(_tmpPath!), fit: BoxFit.cover)
-                    : (current != null && current.isNotEmpty)
-                        ? Image.file(File(current), fit: BoxFit.cover)
-                        : Container(
-                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                            child: const Center(child: Icon(Icons.image_not_supported_outlined, size: 42)),
-                          ),
+                    : buildProductImage(
+                        product: widget.product,
+                        fit: BoxFit.cover,
+                        fallback: Container(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          child: const Center(child: Icon(Icons.image_not_supported_outlined, size: 42)),
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 12),
@@ -132,4 +140,3 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
     );
   }
 }
-

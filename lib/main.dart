@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'features/auth/auth_provider.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialise les formats de date (fr_FR) pour la facture PDF
-  await initializeDateFormatting('fr_FR', null);
-  runApp(const ProviderScope(child: TpeQrSaasApp()));
+  final prefs = await SharedPreferences.getInstance();
+  final initialAuth =
+      AuthNotifier.decodeStoredState(prefs.getString(kAuthStorageKey));
+  runApp(
+    ProviderScope(
+      overrides: [
+        initialAuthStateProvider.overrideWithValue(initialAuth),
+      ],
+      child: const TpeQrSaasApp(),
+    ),
+  );
 }

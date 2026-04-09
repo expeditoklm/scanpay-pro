@@ -17,6 +17,31 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
 
+  Future<void> _confirmSignOut() async {
+    final shouldLogout = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Déconnexion'),
+            content: const Text(
+              'Voulez-vous vraiment vous déconnecter de cette boutique ?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Se déconnecter'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!shouldLogout || !mounted) return;
+    await ref.read(authProvider.notifier).signOut();
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
@@ -35,7 +60,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         actions: [
           IconButton(
             tooltip: 'Déconnexion',
-            onPressed: () => ref.read(authProvider.notifier).signOut(),
+            onPressed: _confirmSignOut,
             icon: const Icon(Icons.logout),
           ),
         ],

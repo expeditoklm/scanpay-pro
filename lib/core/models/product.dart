@@ -5,12 +5,12 @@ class Product {
     required this.name,
     required this.price,
     required this.stock,
-    this.sku,
-    this.description,
     this.referenceImagePath,
-    this.referenceImageUrl,
-    this.referenceImageHash,
     this.consumerCode,
+    this.referenceImageHash,
+    this.description,
+    this.referenceImageUrl,
+    this.sku,
   });
 
   final String id;
@@ -18,12 +18,12 @@ class Product {
   final String name;
   final double price;
   final int stock;
-  final String? sku;
-  final String? description;
   final String? referenceImagePath;
-  final String? referenceImageUrl;
-  final String? referenceImageHash;
   final String? consumerCode;
+  final String? referenceImageHash;
+  final String? description;
+  final String? referenceImageUrl;
+  final String? sku;
 
   Product copyWith({
     String? id,
@@ -31,12 +31,12 @@ class Product {
     String? name,
     double? price,
     int? stock,
-    String? sku,
-    String? description,
     String? referenceImagePath,
-    String? referenceImageUrl,
-    String? referenceImageHash,
     String? consumerCode,
+    String? referenceImageHash,
+    String? description,
+    String? referenceImageUrl,
+    String? sku,
   }) {
     return Product(
       id: id ?? this.id,
@@ -44,12 +44,12 @@ class Product {
       name: name ?? this.name,
       price: price ?? this.price,
       stock: stock ?? this.stock,
-      sku: sku ?? this.sku,
-      description: description ?? this.description,
       referenceImagePath: referenceImagePath ?? this.referenceImagePath,
-      referenceImageUrl: referenceImageUrl ?? this.referenceImageUrl,
-      referenceImageHash: referenceImageHash ?? this.referenceImageHash,
       consumerCode: consumerCode ?? this.consumerCode,
+      referenceImageHash: referenceImageHash ?? this.referenceImageHash,
+      description: description ?? this.description,
+      referenceImageUrl: referenceImageUrl ?? this.referenceImageUrl,
+      sku: sku ?? this.sku,
     );
   }
 
@@ -59,12 +59,12 @@ class Product {
         'name': name,
         'price': price,
         'stock': stock,
-        'sku': sku,
-        'description': description,
         'referenceImagePath': referenceImagePath,
-        'referenceImageUrl': referenceImageUrl,
-        'referenceImageHash': referenceImageHash,
         'consumerCode': consumerCode,
+        'referenceImageHash': referenceImageHash,
+        'description': description,
+        'referenceImageUrl': referenceImageUrl,
+        'sku': sku,
       };
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -74,12 +74,12 @@ class Product {
       name: json['name'] as String,
       price: (json['price'] as num).toDouble(),
       stock: (json['stock'] as num).toInt(),
-      sku: json['sku'] as String?,
-      description: json['description'] as String?,
       referenceImagePath: json['referenceImagePath'] as String?,
-      referenceImageUrl: json['referenceImageUrl'] as String?,
-      referenceImageHash: json['referenceImageHash'] as String?,
       consumerCode: json['consumerCode'] as String?,
+      referenceImageHash: json['referenceImageHash'] as String?,
+      description: json['description'] as String?,
+      referenceImageUrl: json['referenceImageUrl'] as String?,
+      sku: json['sku'] as String?,
     );
   }
 }

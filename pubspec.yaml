@@ -11,10 +11,6 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.6.1
-  file_picker: ^8.1.7
-  csv: ^6.0.0
-  http: ^1.2.2
-  shared_preferences: ^2.3.2
   qr_flutter: ^4.1.0
   mobile_scanner: ^6.0.2
   crypto: ^3.0.6
@@ -28,6 +24,11 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.4
   path_provider: ^2.1.4
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  csv: ^8.0.0
+  file_picker: ^8.1.2
+  excel: ^4.0.6
 
 dev_dependencies:
   flutter_test:

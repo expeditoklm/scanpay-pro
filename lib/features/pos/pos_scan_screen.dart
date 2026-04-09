@@ -110,7 +110,10 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     await _controller.stop();
 
     Product? toAdd = product;
-    if ((product.referenceImagePath ?? '').isNotEmpty) {
+    final hasReferenceImage =
+        (product.referenceImagePath ?? '').isNotEmpty ||
+        (product.referenceImageUrl ?? '').isNotEmpty;
+    if (hasReferenceImage) {
       final ok = await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
@@ -125,7 +128,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
       }
     }
 
-    ref.read(cartProvider.notifier).addProduct(toAdd);
+    ref.read(cartProvider.notifier).addProduct(toAdd!);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${toAdd.name} ajouté au panier')),

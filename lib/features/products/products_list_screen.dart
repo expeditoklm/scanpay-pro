@@ -1,33 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/product.dart';
 import '../../core/utils/price_formatter.dart';
 import 'import_products_screen.dart';
+import 'product_detail_screen.dart';
 import 'product_form_screen.dart';
 import 'products_providers.dart';
-import 'product_detail_screen.dart';
 
-final _productsQueryProvider = StateProvider.autoDispose<String>((ref) => '');
-
-class ProductsListScreen extends ConsumerWidget {
+class ProductsListScreen extends ConsumerStatefulWidget {
   const ProductsListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(productsListProvider);
-    final query = ref.watch(_productsQueryProvider);
-    final q = query.trim().toLowerCase();
+  ConsumerState<ProductsListScreen> createState() => _ProductsListScreenState();
+}
 
-    return async.when(
+class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final asyncProducts = ref.watch(productsListProvider);
+
+    return asyncProducts.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Erreur: $e')),
+      error: (error, _) => Center(child: Text('Erreur: $error')),
       data: (products) {
-        final visible = q.isEmpty
-            ? products
-            : products.where((p) {
-                final sku = (p.sku ?? '').toLowerCase();
-                return p.name.toLowerCase().contains(q) || sku.contains(q);
-              }).toList();
+        final filtered = _filterProducts(products);
 
         if (products.isEmpty) {
           return Center(
@@ -38,83 +37,100 @@ class ProductsListScreen extends ConsumerWidget {
                 children: [
                   const Icon(Icons.inventory_2_outlined, size: 56),
                   const SizedBox(height: 16),
-                  Text('Aucun produit', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Aucun produit',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
-                  const Text('Créez un produit avec image de référence et QR sécurisé.'),
+                  const Text(
+                    'Créez un produit ou importez un fichier CSV/Excel.',
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () => _openForm(context, ref),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Nouveau produit'),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => _openForm(context),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Nouveau produit'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _openImport(context),
+                        icon: const Icon(Icons.upload_file),
+                        label: const Text('Importer'),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           );
         }
+
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(productsListProvider),
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: visible.length + 2,
-            itemBuilder: (context, i) {
-              if (i == 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      SizedBox(
-                        width: 260,
-                        child: TextField(
-                          onChanged: (v) => ref.read(_productsQueryProvider.notifier).state = v,
-                          decoration: const InputDecoration(
-                            prefixIcon: Icon(Icons.search),
-                            labelText: 'Rechercher',
-                            border: OutlineInputBorder(),
+            itemCount: filtered.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            decoration: const InputDecoration(
+                              prefixIcon: Icon(Icons.search),
+                              hintText: 'Rechercher un produit, SKU ou description',
+                            ),
+                            onChanged: (value) => setState(() => _query = value),
                           ),
                         ),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context).push<void>(
-                          MaterialPageRoute(builder: (_) => const ImportProductsScreen()),
+                        const SizedBox(width: 12),
+                        OutlinedButton.icon(
+                          onPressed: () => _openImport(context),
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Importer'),
                         ),
-                        icon: const Icon(Icons.upload_file),
-                        label: const Text('Importer CSV'),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: () => _openForm(context),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Nouveau'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          'Aucun produit trouvé pour "$_query".',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
                       ),
-                      FilledButton.icon(
-                        onPressed: () => _openForm(context, ref),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Nouveau produit'),
-                      ),
-                    ],
-                  ),
+                  ],
                 );
               }
-              // Footer (évite RangeError quand la liste est filtrée)
-              if (i == visible.length + 1) {
-                return const SizedBox(height: 24);
-              }
-              if (visible.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.only(top: 16),
-                  child: Center(child: Text('Aucun résultat')),
-                );
-              }
-              final p = visible[i - 1];
+
+              final product = filtered[index - 1];
               return Card(
                 child: ListTile(
                   leading: CircleAvatar(
-                    child: Text(p.name.isNotEmpty ? p.name[0].toUpperCase() : '?'),
+                    child: Text(
+                      product.name.isNotEmpty ? product.name[0].toUpperCase() : '?',
+                    ),
                   ),
-                  title: Text(p.name),
-                  subtitle: Text('${formatPriceEuro(p.price)} · Stock ${p.stock}'),
+                  title: Text(product.name),
+                  subtitle: Text(_subtitle(product)),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => ProductDetailScreen(product: p),
+                      builder: (_) => ProductDetailScreen(product: product),
                     ),
                   ),
                 ),
@@ -126,9 +142,38 @@ class ProductsListScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _openForm(BuildContext context, WidgetRef ref) async {
+  List<Product> _filterProducts(List<Product> products) {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return products;
+    return products.where((product) {
+      return product.name.toLowerCase().contains(query) ||
+          (product.sku ?? '').toLowerCase().contains(query) ||
+          (product.description ?? '').toLowerCase().contains(query);
+    }).toList();
+  }
+
+  String _subtitle(Product product) {
+    final parts = <String>[
+      formatPriceEuro(product.price),
+      'Stock ${product.stock}',
+    ];
+    final sku = product.sku?.trim();
+    if (sku != null && sku.isNotEmpty) {
+      parts.add('SKU $sku');
+    }
+    return parts.join(' · ');
+  }
+
+  Future<void> _openForm(BuildContext context) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ProductFormScreen()),
+    );
+    ref.invalidate(productsListProvider);
+  }
+
+  Future<void> _openImport(BuildContext context) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const ImportProductsScreen()),
     );
     ref.invalidate(productsListProvider);
   }

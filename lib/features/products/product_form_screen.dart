@@ -58,6 +58,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final price = double.parse(_priceCtrl.text.replaceAll(',', '.'));
       final stock = int.parse(_stockCtrl.text.trim());
       final repo = ref.read(productsRepositoryProvider);
+      final erpRepo = ref.read(erpProductsRepositoryProvider);
       final product = Product(
         id: '',
         companyId: auth.companyId,
@@ -66,7 +67,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         stock: stock,
         referenceImagePath: _imagePath,
       );
-      await repo.upsert(product);
+      final saved = await repo.upsert(product);
+      if (_imagePath != null && _imagePath!.isNotEmpty) {
+        await erpRepo.uploadProductImage(
+          companyId: auth.companyId,
+          productId: saved.id,
+          sourcePath: _imagePath!,
+        );
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       setState(() => _error = e.toString());

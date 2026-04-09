@@ -6,8 +6,9 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/product.dart';
 import '../../core/services/image_label_match.dart';
+import '../../core/utils/product_image.dart';
+import '../../data/repository_providers.dart';
 
-/// Comparaison visuelle légère : ML Kit Image Labeling sur image de référence vs photo caisse.
 class AntiFraudSheet extends ConsumerStatefulWidget {
   const AntiFraudSheet({super.key, required this.product});
 
@@ -23,6 +24,7 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
   bool _loading = false;
   double? _score;
   String? _error;
+  String? _resolvedReferencePath;
 
   Future<void> _capture() async {
     final x = await _picker.pickImage(source: ImageSource.camera, maxWidth: 1600);
@@ -34,10 +36,20 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
     });
   }
 
+  Future<String?> _resolveReferencePath() async {
+    final service = ref.read(productImageServiceProvider);
+    final saved = await service.ensureLocalReferenceImage(
+      companyId: widget.product.companyId,
+      productId: widget.product.id,
+      localPath: widget.product.referenceImagePath,
+      remoteUrl: widget.product.referenceImageUrl,
+    );
+    return saved?.path;
+  }
+
   Future<void> _runCompare() async {
-    final refPath = widget.product.referenceImagePath;
     final live = _livePath;
-    if (refPath == null || live == null) return;
+    if (live == null) return;
 
     setState(() {
       _loading = true;
@@ -45,8 +57,18 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
     });
 
     try {
+      final refPath = await _resolveReferencePath();
+      if (refPath == null) {
+        setState(() => _error = 'Aucune image de référence disponible pour la vérification.');
+        return;
+      }
+
       final score = await ImageLabelMatch.similarityScore(refPath, live);
-      if (mounted) setState(() => _score = score);
+      if (!mounted) return;
+      setState(() {
+        _resolvedReferencePath = refPath;
+        _score = score;
+      });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -56,7 +78,9 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final refPath = widget.product.referenceImagePath;
+    final hasReferenceImage =
+        (widget.product.referenceImagePath ?? '').isNotEmpty ||
+        (widget.product.referenceImageUrl ?? '').isNotEmpty;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -70,15 +94,18 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Anti-fraude — ${widget.product.name}', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Anti-fraude — ${widget.product.name}',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             Text(
-              'Comparez une photo du produit avec l’image de référence (libellés ML Kit). '
-              'En production, affinez le seuil et combinez avec Cloud Functions.',
+              'Comparez une photo du produit avec l’image de référence. '
+              'Si l’image vient du web, elle sera téléchargée localement avant la vérification ML Kit.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
-            if (refPath != null)
+            if (hasReferenceImage)
               Row(
                 children: [
                   Expanded(
@@ -90,7 +117,16 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
                           borderRadius: BorderRadius.circular(8),
                           child: AspectRatio(
                             aspectRatio: 1,
-                            child: Image.file(File(refPath), fit: BoxFit.cover),
+                            child: _resolvedReferencePath != null
+                                ? Image.file(File(_resolvedReferencePath!), fit: BoxFit.cover)
+                                : buildProductImage(
+                                    product: widget.product,
+                                    fit: BoxFit.cover,
+                                    fallback: Container(
+                                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                      child: const Icon(Icons.image_not_supported_outlined, size: 42),
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
@@ -127,7 +163,7 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
               icon: const Icon(Icons.camera_alt),
               label: const Text('Prendre une photo'),
             ),
-            if (refPath != null && _livePath != null) ...[
+            if (hasReferenceImage && _livePath != null) ...[
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: _loading ? null : _runCompare,
@@ -143,20 +179,27 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
             if (_score != null) ...[
               const SizedBox(height: 12),
               Text(
-                'Score de similarité (libellés) : ${(_score! * 100).toStringAsFixed(0)} %',
+                'Score de similarité : ${(_score! * 100).toStringAsFixed(0)} %',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               Text(
-                _score! >= 0.25 ? 'Correspondance acceptable (démo).' : 'Écart important — vérifiez le produit.',
+                _score! >= 0.25
+                    ? 'Correspondance acceptable.'
+                    : 'Écart important, vérifiez le produit.',
                 style: TextStyle(
-                  color: _score! >= 0.25 ? Colors.green.shade800 : Theme.of(context).colorScheme.error,
+                  color: _score! >= 0.25
+                      ? Colors.green.shade800
+                      : Theme.of(context).colorScheme.error,
                 ),
               ),
             ],
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ),
             const SizedBox(height: 16),
             Row(
@@ -171,7 +214,7 @@ class _AntiFraudSheetState extends ConsumerState<AntiFraudSheet> {
                 ),
                 const Spacer(),
                 FilledButton(
-                  onPressed: refPath == null
+                  onPressed: !hasReferenceImage
                       ? () => Navigator.of(context).pop(true)
                       : (_livePath != null && (_score ?? 0) >= 0.25)
                           ? () => Navigator.of(context).pop(true)

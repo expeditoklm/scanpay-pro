@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:csv/csv.dart';
-
 import '../models/product.dart';
 
 class CsvProductsParserResult {
@@ -16,40 +14,29 @@ class CsvProductsParserResult {
   bool get isOk => errors.isEmpty;
 }
 
-/// Parse un CSV produits.
-///
-/// Colonnes acceptées (insensibles à la casse) :
-/// - name (obligatoire)
-/// - price (obligatoire)
-/// - stock (obligatoire)
-/// - id (optionnel)
-/// - sku (optionnel)
-/// - description (optionnel)
-///
-/// Notes:
-/// - `companyId` est imposé par l’app (multi-tenant), jamais lu depuis le fichier.
-/// - `price` accepte virgule ou point.
 CsvProductsParserResult parseProductsCsvBytes({
   required List<int> bytes,
   required String companyId,
 }) {
   final text = utf8.decode(bytes, allowMalformed: true);
-  final rows = const CsvToListConverter(
-    shouldParseNumbers: false,
-    fieldDelimiter: ',',
-  ).convert(text);
+  final rows = _parseCsvRows(text);
 
   if (rows.isEmpty) {
-    return const CsvProductsParserResult(products: [], errors: ['Fichier vide.']);
+    return const CsvProductsParserResult(
+      products: [],
+      errors: ['Fichier vide.'],
+    );
   }
 
-  final header = rows.first.map((e) => (e ?? '').toString().trim().toLowerCase()).toList();
+  final header = rows.first
+      .map((value) => value.trim().toLowerCase())
+      .toList();
+
   int idx(String name) => header.indexOf(name);
 
   final nameI = idx('name');
   final priceI = idx('price');
   final stockI = idx('stock');
-  final idI = idx('id');
   final skuI = idx('sku');
   final descI = idx('description');
 
@@ -57,43 +44,47 @@ CsvProductsParserResult parseProductsCsvBytes({
   if (nameI < 0) errors.add('Colonne manquante: name');
   if (priceI < 0) errors.add('Colonne manquante: price');
   if (stockI < 0) errors.add('Colonne manquante: stock');
-  if (errors.isNotEmpty) return CsvProductsParserResult(products: const [], errors: errors);
+  if (errors.isNotEmpty) {
+    return CsvProductsParserResult(products: const [], errors: errors);
+  }
 
   final products = <Product>[];
-  for (var r = 1; r < rows.length; r++) {
-    final row = rows[r];
-    String cell(int i) => (i >= 0 && i < row.length) ? (row[i] ?? '').toString().trim() : '';
+  for (var rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+    final row = rows[rowIndex];
+
+    String cell(int index) {
+      if (index < 0 || index >= row.length) return '';
+      return row[index].trim();
+    }
 
     final name = cell(nameI);
     if (name.isEmpty) {
-      errors.add('Ligne ${r + 1}: name vide');
       continue;
     }
 
     final priceRaw = cell(priceI).replaceAll(',', '.');
+    final stockRaw = cell(stockI);
     final price = double.tryParse(priceRaw);
+    final stock = int.tryParse(stockRaw);
+
     if (price == null || price < 0) {
-      errors.add('Ligne ${r + 1}: price invalide ($priceRaw)');
+      errors.add('Ligne ${rowIndex + 1}: price invalide ($priceRaw)');
       continue;
     }
-
-    final stockRaw = cell(stockI);
-    final stock = int.tryParse(stockRaw);
     if (stock == null || stock < 0) {
-      errors.add('Ligne ${r + 1}: stock invalide ($stockRaw)');
+      errors.add('Ligne ${rowIndex + 1}: stock invalide ($stockRaw)');
       continue;
     }
 
     products.add(
       Product(
-        id: '', // Toujours vide → POST (création) même si CSV a une colonne id
+        id: '',
         companyId: companyId,
         name: name,
         price: price,
         stock: stock,
         sku: skuI >= 0 ? cell(skuI) : null,
         description: descI >= 0 ? cell(descI) : null,
-        referenceImagePath: null,
       ),
     );
   }
@@ -101,3 +92,52 @@ CsvProductsParserResult parseProductsCsvBytes({
   return CsvProductsParserResult(products: products, errors: errors);
 }
 
+List<List<String>> _parseCsvRows(String source) {
+  final rows = <List<String>>[];
+  final currentRow = <String>[];
+  final currentCell = StringBuffer();
+  var inQuotes = false;
+
+  for (var i = 0; i < source.length; i++) {
+    final char = source[i];
+
+    if (char == '"') {
+      final nextIsQuote = i + 1 < source.length && source[i + 1] == '"';
+      if (inQuotes && nextIsQuote) {
+        currentCell.write('"');
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char == ',') {
+      currentRow.add(currentCell.toString());
+      currentCell.clear();
+      continue;
+    }
+
+    if (!inQuotes && (char == '\n' || char == '\r')) {
+      if (char == '\r' && i + 1 < source.length && source[i + 1] == '\n') {
+        i++;
+      }
+      currentRow.add(currentCell.toString());
+      currentCell.clear();
+      if (currentRow.any((cell) => cell.trim().isNotEmpty)) {
+        rows.add(List<String>.from(currentRow));
+      }
+      currentRow.clear();
+      continue;
+    }
+
+    currentCell.write(char);
+  }
+
+  currentRow.add(currentCell.toString());
+  if (currentRow.any((cell) => cell.trim().isNotEmpty)) {
+    rows.add(List<String>.from(currentRow));
+  }
+
+  return rows;
+}
