@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/models/product.dart';
+import '../../data/product_extras_repository.dart';
+import '../../core/utils/plan_quota.dart';
+import '../../data/offline_storage.dart';
 import '../../data/repository_providers.dart';
 import '../auth/auth_provider.dart';
 
@@ -55,29 +58,125 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     });
 
     try {
+      // ── Récupérer la liste actuelle (avec fallback cache) ──────────────
+      List existing;
+      try {
+        existing = await ref
+            .read(productsRepositoryProvider)
+            .listProducts(auth.companyId);
+      } catch (_) {
+        existing = await OfflineStorage().loadProducts(auth.companyId);
+      }
+
+      // ── Contrôle doublon ───────────────────────────────────────────────
+      final normalizedName = _nameCtrl.text.trim().toLowerCase();
+      final duplicate = existing.any(
+        (product) => product.name.trim().toLowerCase() == normalizedName,
+      );
+      if (duplicate) {
+        throw Exception(
+          'Un produit avec le libellé "${_nameCtrl.text.trim()}" existe déjà.\n'
+          'Choisissez un nom différent.',
+        );
+      }
+
+      // ── Contrôle quota plan ────────────────────────────────────────────
+      final plan = auth.plan.isEmpty ? 'free' : auth.plan;
+      final quotaCheck = checkProductQuota(
+        plan: plan,
+        existingCount: existing.length,
+      );
+      if (!quotaCheck.allowed) {
+        throw Exception(quotaCheck.errorMessage);
+      }
       final price = double.parse(_priceCtrl.text.replaceAll(',', '.'));
       final stock = int.parse(_stockCtrl.text.trim());
       final repo = ref.read(productsRepositoryProvider);
       final erpRepo = ref.read(erpProductsRepositoryProvider);
+      final extrasRepo = ref.read(productExtrasRepositoryProvider);
+      final imgService = ref.read(productImageServiceProvider);
       final product = Product(
         id: '',
         companyId: auth.companyId,
         name: _nameCtrl.text.trim(),
         price: price,
         stock: stock,
-        referenceImagePath: _imagePath,
       );
       final saved = await repo.upsert(product);
+      var syncedRemotely = true;
       if (_imagePath != null && _imagePath!.isNotEmpty) {
-        await erpRepo.uploadProductImage(
+        final persisted = await imgService.persistReferenceImage(
           companyId: auth.companyId,
           productId: saved.id,
           sourcePath: _imagePath!,
         );
+        await extrasRepo.set(
+          companyId: auth.companyId,
+          productId: saved.id,
+          extras: ProductExtras(
+            referenceImagePath: persisted.path,
+            referenceImageHash: persisted.sha256,
+            pendingUpload: true,
+          ),
+        );
+        await repo.upsert(
+          saved.copyWith(
+            referenceImagePath: persisted.path,
+            referenceImageHash: persisted.sha256,
+          ),
+        );
+        try {
+          await erpRepo.uploadProductImage(
+            companyId: auth.companyId,
+            productId: saved.id,
+            sourcePath: persisted.path,
+            referenceImageHash: persisted.sha256,
+          );
+          await extrasRepo.markUploadSynced(
+            companyId: auth.companyId,
+            productId: saved.id,
+          );
+        } catch (_) {
+          syncedRemotely = false;
+        }
       }
-      if (mounted) Navigator.of(context).pop(true);
+      if (!mounted) return;
+      if (_imagePath != null && _imagePath!.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              syncedRemotely
+                  ? 'Produit et image sauvegardes'
+                  : 'Produit sauvegarde localement. Image en attente de synchronisation.',
+            ),
+          ),
+        );
+      }
+      Navigator.of(context).pop(true);
     } catch (e) {
-      setState(() => _error = e.toString());
+      final msg = e.toString();
+      final isNetwork = msg.contains('SocketException') ||
+          msg.contains('ClientException') ||
+          msg.contains('Connection') ||
+          msg.contains('Network is unreachable');
+      if (isNetwork) {
+        // Produit sauvegardé offline par le repo — on ferme et on informe
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Produit enregistré hors connexion — sera synchronisé automatiquement.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        setState(() => _error = msg
+            .replaceAll('Exception: ', '')
+            .replaceAll('Exception(', '')
+            .replaceFirst(RegExp(r'\)$'), ''));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -103,7 +202,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               TextFormField(
                 controller: _priceCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Prix (€)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Prix (FCFA)', border: OutlineInputBorder()),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'Requis';
                   final p = double.tryParse(v.replaceAll(',', '.'));
@@ -153,7 +252,33 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               ],
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer.withOpacity(0.4),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.error.withOpacity(0.5),
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.error_outline,
+                          color: Theme.of(context).colorScheme.error, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
               const SizedBox(height: 24),
               FilledButton(

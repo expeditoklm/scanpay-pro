@@ -11,19 +11,26 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  static final RegExp _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
   final _formKey = GlobalKey<FormState>();
   final _companyCtrl = TextEditingController(text: 'Boutique Demo');
+  final _identifierCtrl = TextEditingController(text: 'demo-shop');
   final _emailCtrl = TextEditingController(text: 'admin@demo.tpe-qr.com');
   final _passwordCtrl = TextEditingController(text: 'AdminDemo123!');
+  final _confirmPasswordCtrl = TextEditingController();
   bool _registerMode = false;
   bool _loading = false;
+  bool _showPassword = false;
+  bool _showConfirmPassword = false;
   String? _error;
 
   @override
   void dispose() {
     _companyCtrl.dispose();
+    _identifierCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -40,10 +47,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           companyName: _companyCtrl.text,
           email: _emailCtrl.text,
           password: _passwordCtrl.text,
+          confirmPassword: _confirmPasswordCtrl.text,
         );
       } else {
         await auth.login(
-          email: _emailCtrl.text,
+          identifier: _identifierCtrl.text,
           password: _passwordCtrl.text,
         );
       }
@@ -93,8 +101,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         const SizedBox(height: 8),
                         Text(
                           _registerMode
-                              ? 'Crée une boutique, récupère automatiquement son JWT et sa clé HMAC.'
-                              : 'Connecte-toi avec un compte backend réel. La session et la clé HMAC sont stockées localement.',
+                              ? 'Cree une boutique puis confirme le mot de passe pour activer le compte administrateur.'
+                              : 'Connecte-toi avec le matricule de la boutique et le mot de passe administrateur.',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
@@ -139,39 +147,102 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             },
                           ),
                           const SizedBox(height: 16),
-                        ],
-                        TextFormField(
-                          controller: _emailCtrl,
-                          keyboardType: TextInputType.emailAddress,
-                          autofillHints: const [AutofillHints.username],
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
-                            border: OutlineInputBorder(),
+                          TextFormField(
+                            controller: _emailCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                            decoration: const InputDecoration(
+                              labelText: 'Email administrateur',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              if (!_registerMode) return null;
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Requis';
+                              }
+                              if (!_emailPattern.hasMatch(value.trim())) {
+                                return 'Email invalide';
+                              }
+                              return null;
+                            },
                           ),
-                          validator: (value) =>
-                              (value == null || value.trim().isEmpty)
-                                  ? 'Requis'
-                                  : null,
-                        ),
+                        ] else
+                          TextFormField(
+                            controller: _identifierCtrl,
+                            autofillHints: const [AutofillHints.username],
+                            decoration: const InputDecoration(
+                              labelText: 'Matricule boutique',
+                              hintText: 'Ex: demo-shop',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) =>
+                                (value == null || value.trim().isEmpty)
+                                    ? 'Requis'
+                                    : null,
+                          ),
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _passwordCtrl,
-                          obscureText: true,
+                          obscureText: !_showPassword,
                           autofillHints: const [AutofillHints.password],
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Mot de passe',
-                            border: OutlineInputBorder(),
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              onPressed: () {
+                                setState(() => _showPassword = !_showPassword);
+                              },
+                              icon: Icon(
+                                _showPassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                            ),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
                               return 'Requis';
                             }
                             if (_registerMode && value.trim().length < 8) {
-                              return '8 caractères minimum';
+                              return '8 caracteres minimum';
                             }
                             return null;
                           },
                         ),
+                        if (_registerMode) ...[
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _confirmPasswordCtrl,
+                            obscureText: !_showConfirmPassword,
+                            autofillHints: const [AutofillHints.password],
+                            decoration: InputDecoration(
+                              labelText: 'Confirmer le mot de passe',
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _showConfirmPassword = !_showConfirmPassword;
+                                  });
+                                },
+                                icon: Icon(
+                                  _showConfirmPassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                              ),
+                            ),
+                            validator: (value) {
+                              if (!_registerMode) return null;
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Confirmation requise';
+                              }
+                              if (value != _passwordCtrl.text) {
+                                return 'Les mots de passe ne correspondent pas';
+                              }
+                              return null;
+                            },
+                          ),
+                        ],
                         if (_error != null) ...[
                           const SizedBox(height: 12),
                           Text(
@@ -192,16 +263,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 )
                               : Text(
                                   _registerMode
-                                      ? 'Créer la boutique'
+                                      ? 'Creer la boutique'
                                       : 'Se connecter',
                                 ),
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Compte démo prêt à l’emploi: admin@demo.tpe-qr.com / AdminDemo123!',
+                          _registerMode
+                              ? 'Le matricule de boutique sera le code interne utilise pour la connexion.'
+                              : 'Compte demo pret a l emploi : demo-shop / AdminDemo123!',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Mentions legales : lors de la verification d authenticite, la localisation ne doit etre collectee qu avec consentement explicite. Elle sert a la securite, a la tracabilite et aux statistiques antifraude.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.4,
                           ),
                         ),
                       ],

@@ -7,6 +7,7 @@ import '../../core/utils/product_image.dart';
 import '../../core/utils/price_formatter.dart';
 import '../../core/utils/qr_hmac.dart';
 import '../auth/auth_provider.dart';
+import 'product_image_edit_screen.dart';
 
 class ProductDetailScreen extends ConsumerWidget {
   const ProductDetailScreen({super.key, required this.product});
@@ -58,6 +59,43 @@ class ProductDetailScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final updated = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (_) => ProductImageEditScreen(product: product),
+                    ),
+                  );
+                  if (updated == true && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Image produit mise à jour')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.image_outlined),
+                label: const Text('Modifier l’image du produit'),
+              ),
+            ],
+            if ((product.referenceImagePath ?? '').isEmpty &&
+                (product.referenceImageUrl ?? '').isEmpty) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final updated = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (_) => ProductImageEditScreen(product: product),
+                    ),
+                  );
+                  if (updated == true && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Image produit ajoutée')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: const Text('Ajouter une image produit'),
               ),
             ],
             const SizedBox(height: 24),

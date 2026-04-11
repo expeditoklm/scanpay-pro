@@ -84,8 +84,8 @@ Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat format) async {
                 children: [
                   _cell(line.name),
                   _cell('${line.quantity}'),
-                  _cell('${line.unitPrice.toStringAsFixed(2)} EUR'),
-                  _cell('${line.lineTotal.toStringAsFixed(2)} EUR'),
+                  _cell('${line.unitPrice.toStringAsFixed(2)} FCFA'),
+                  _cell('${line.lineTotal.toStringAsFixed(2)} FCFA'),
                 ],
               ),
           ],
@@ -94,7 +94,7 @@ Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat format) async {
         pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
-            'Total : ${invoice.total.toStringAsFixed(2)} EUR',
+            'Total : ${invoice.total.toStringAsFixed(2)} FCFA',
             style: pw.TextStyle(
               fontSize: 15,
               fontWeight: pw.FontWeight.bold,

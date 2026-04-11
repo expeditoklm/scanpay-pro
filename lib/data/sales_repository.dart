@@ -32,6 +32,17 @@ class SalesRepository {
     );
     if (inv == null) throw Exception('Stock insuffisant pour au moins une ligne.');
 
+    if (inv.pendingSync) {
+      final productsRepo = ref.read(productsRepositoryProvider);
+      for (final line in cart) {
+        await productsRepo.decrementStock(
+          auth.companyId,
+          line.product.id,
+          line.quantity,
+        );
+      }
+    }
+
     // Rafraîchir la liste des ventes dans l'UI
     ref.read(salesRefreshProvider.notifier).state++;
 

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/product.dart';
+import '../../data/product_extras_repository.dart';
 import '../../data/repository_providers.dart';
 
 class ProductEditScreen extends ConsumerStatefulWidget {
@@ -73,7 +74,18 @@ class _ProductEditScreenState extends ConsumerState<ProductEditScreen> {
 
     try {
       final repo = ref.read(productsRepositoryProvider);
+      final existingProducts = await repo.listProducts(widget.product.companyId);
+      final normalizedName = _nameCtrl.text.trim().toLowerCase();
+      final duplicate = existingProducts.any(
+        (product) =>
+            product.id != widget.product.id &&
+            product.name.trim().toLowerCase() == normalizedName,
+      );
+      if (duplicate) {
+        throw Exception('Un produit avec ce libelle existe deja');
+      }
       final erpRepo = ref.read(erpProductsRepositoryProvider);
+      final extrasRepo = ref.read(productExtrasRepositoryProvider);
       final imgService = ref.read(productImageServiceProvider);
       final price = double.parse(_priceCtrl.text.replaceAll(',', '.'));
       final stock = int.parse(_stockCtrl.text.trim());
@@ -95,18 +107,46 @@ class _ProductEditScreenState extends ConsumerState<ProductEditScreen> {
         referenceImageHash: persisted?.sha256 ?? widget.product.referenceImageHash,
       );
 
-      final savedProduct = await repo.upsert(updated);
-      if (_imagePath != null && _imagePath!.isNotEmpty) {
-        await erpRepo.uploadProductImage(
+      if (persisted != null) {
+        await extrasRepo.set(
           companyId: widget.product.companyId,
-          productId: savedProduct.id,
-          sourcePath: _imagePath!,
-          referenceImageHash: persisted?.sha256 ?? widget.product.referenceImageHash,
+          productId: widget.product.id,
+          extras: ProductExtras(
+            referenceImagePath: persisted.path,
+            referenceImageHash: persisted.sha256,
+            pendingUpload: true,
+          ),
         );
+      }
+
+      final savedProduct = await repo.upsert(updated);
+      var syncedRemotely = true;
+      if (_imagePath != null && _imagePath!.isNotEmpty) {
+        try {
+          await erpRepo.uploadProductImage(
+            companyId: widget.product.companyId,
+            productId: savedProduct.id,
+            sourcePath: persisted?.path ?? _imagePath!,
+            referenceImageHash:
+                persisted?.sha256 ?? widget.product.referenceImageHash,
+          );
+          await extrasRepo.markUploadSynced(
+            companyId: widget.product.companyId,
+            productId: savedProduct.id,
+          );
+        } catch (_) {
+          syncedRemotely = false;
+        }
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image et produit sauvegardés')),
+        SnackBar(
+          content: Text(
+            syncedRemotely
+                ? 'Image et produit sauvegardés'
+                : 'Produit sauvegardé localement. Synchronisation serveur en attente.',
+          ),
+        ),
       );
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -147,7 +187,7 @@ class _ProductEditScreenState extends ConsumerState<ProductEditScreen> {
               TextFormField(
                 controller: _priceCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Prix (€)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Prix (FCFA)', border: OutlineInputBorder()),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'Requis';
                   final p = double.tryParse(v.replaceAll(',', '.'));

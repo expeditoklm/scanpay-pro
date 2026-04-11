@@ -15,6 +15,7 @@ final authProvider = NotifierProvider<AuthNotifier, AuthState?>(AuthNotifier.new
 
 class AuthNotifier extends Notifier<AuthState?> {
   final http.Client _client = http.Client();
+  static final RegExp _jsonLike = RegExp(r'^\s*[\{\[]');
 
   @override
   AuthState? build() => ref.watch(initialAuthStateProvider);
@@ -34,7 +35,7 @@ class AuthNotifier extends Notifier<AuthState?> {
   }
 
   Future<AuthState> login({
-    required String email,
+    required String identifier,
     required String password,
   }) async {
     final res = await _client
@@ -42,7 +43,7 @@ class AuthNotifier extends Notifier<AuthState?> {
           Uri.parse('$kErpBaseUrl/auth/login'),
           headers: const {'Content-Type': 'application/json'},
           body: jsonEncode({
-            'email': email.trim(),
+            'identifier': identifier.trim(),
             'password': password,
           }),
         )
@@ -56,6 +57,7 @@ class AuthNotifier extends Notifier<AuthState?> {
     required String companyName,
     required String email,
     required String password,
+    required String confirmPassword,
   }) async {
     final res = await _client
         .post(
@@ -65,6 +67,7 @@ class AuthNotifier extends Notifier<AuthState?> {
             'company_name': companyName.trim(),
             'email': email.trim(),
             'password': password,
+            'confirm_password': confirmPassword,
           }),
         )
         .timeout(const Duration(seconds: 12));
@@ -107,10 +110,30 @@ class AuthNotifier extends Notifier<AuthState?> {
     await _persist(null);
   }
 
+  Future<String> forgotPassword({required String email}) async {
+    final res = await _client
+        .post(
+          Uri.parse('$kErpBaseUrl/auth/forgot-password'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'email': email.trim()}),
+        )
+        .timeout(const Duration(seconds: 12));
+    return _decodeMessageResponse(res);
+  }
+
+  Future<String> resendVerificationEmail({required String email}) async {
+    final res = await _client
+        .post(
+          Uri.parse('$kErpBaseUrl/auth/send-verification-email'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'email': email.trim()}),
+        )
+        .timeout(const Duration(seconds: 12));
+    return _decodeMessageResponse(res);
+  }
+
   AuthState _decodeAuthResponse(http.Response res) {
-    final Map<String, dynamic> body = res.body.isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _decodeBody(res);
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return AuthState.fromJson(body);
     }
@@ -123,5 +146,30 @@ class AuthNotifier extends Notifier<AuthState?> {
     final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
     final state = AuthState.fromJson(json);
     return state.isAuthenticated ? state : null;
+  }
+
+  String _decodeMessageResponse(http.Response res) {
+    final body = _decodeBody(res);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return body['message']?.toString() ?? 'Operation reussie';
+    }
+    final detail = body['detail']?.toString() ?? 'Erreur inconnue';
+    throw Exception(detail);
+  }
+
+  Map<String, dynamic> _decodeBody(http.Response res) {
+    if (res.body.isEmpty) return <String, dynamic>{};
+    if (!_jsonLike.hasMatch(res.body)) {
+      return {
+        'detail': res.statusCode >= 500
+            ? 'Erreur interne du serveur'
+            : res.body,
+      };
+    }
+    final decoded = jsonDecode(res.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return {'detail': 'Reponse serveur invalide'};
   }
 }

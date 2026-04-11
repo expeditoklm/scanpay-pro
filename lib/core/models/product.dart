@@ -11,6 +11,7 @@ class Product {
     this.description,
     this.referenceImageUrl,
     this.sku,
+    this.pendingSync = false,
   });
 
   final String id;
@@ -24,6 +25,8 @@ class Product {
   final String? description;
   final String? referenceImageUrl;
   final String? sku;
+  /// true = créé/modifié hors-ligne, pas encore synchronisé avec le serveur
+  final bool pendingSync;
 
   Product copyWith({
     String? id,
@@ -37,6 +40,7 @@ class Product {
     String? description,
     String? referenceImageUrl,
     String? sku,
+    bool? pendingSync,
   }) {
     return Product(
       id: id ?? this.id,
@@ -50,6 +54,7 @@ class Product {
       description: description ?? this.description,
       referenceImageUrl: referenceImageUrl ?? this.referenceImageUrl,
       sku: sku ?? this.sku,
+      pendingSync: pendingSync ?? this.pendingSync,
     );
   }
 
@@ -65,6 +70,7 @@ class Product {
         'description': description,
         'referenceImageUrl': referenceImageUrl,
         'sku': sku,
+        'pendingSync': pendingSync,
       };
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -80,6 +86,7 @@ class Product {
       description: json['description'] as String?,
       referenceImageUrl: json['referenceImageUrl'] as String?,
       sku: json['sku'] as String?,
+      pendingSync: json['pendingSync'] as bool? ?? false,
     );
   }
 }

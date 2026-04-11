@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/product.dart';
 import '../../core/utils/product_image.dart';
+import '../../data/product_extras_repository.dart';
 import '../../data/repository_providers.dart';
 
 class ProductImageEditScreen extends ConsumerStatefulWidget {
@@ -44,10 +45,21 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
     try {
       final img = ref.read(productImageServiceProvider);
       final erpRepo = ref.read(erpProductsRepositoryProvider);
+      final extrasRepo = ref.read(productExtrasRepositoryProvider);
       final saved = await img.persistReferenceImage(
         companyId: widget.product.companyId,
         productId: widget.product.id,
         sourcePath: tmp,
+      );
+
+      await extrasRepo.set(
+        companyId: widget.product.companyId,
+        productId: widget.product.id,
+        extras: ProductExtras(
+          referenceImagePath: saved.path,
+          referenceImageHash: saved.sha256,
+          pendingUpload: true,
+        ),
       );
 
       final repo = ref.read(productsRepositoryProvider);
@@ -57,16 +69,31 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
           referenceImageHash: saved.sha256,
         ),
       );
-      await erpRepo.uploadProductImage(
-        companyId: widget.product.companyId,
-        productId: widget.product.id,
-        sourcePath: tmp,
-        referenceImageHash: saved.sha256,
-      );
+      var syncedRemotely = true;
+      try {
+        await erpRepo.uploadProductImage(
+          companyId: widget.product.companyId,
+          productId: widget.product.id,
+          sourcePath: saved.path,
+          referenceImageHash: saved.sha256,
+        );
+        await extrasRepo.markUploadSynced(
+          companyId: widget.product.companyId,
+          productId: widget.product.id,
+        );
+      } catch (_) {
+        syncedRemotely = false;
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image sauvegardée')),
+        SnackBar(
+          content: Text(
+            syncedRemotely
+                ? 'Image sauvegardée'
+                : 'Image sauvegardée localement. Synchronisation serveur en attente.',
+          ),
+        ),
       );
       Navigator.of(context).pop(true);
     } catch (e) {

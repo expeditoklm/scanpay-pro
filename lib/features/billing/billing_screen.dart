@@ -40,7 +40,7 @@ class BillingScreen extends ConsumerWidget {
                     ? invoice.reference
                     : 'Facture ${invoice.id.substring(0, 8)}...'),
                 subtitle: Text(
-                  '${_dateFmt.format(invoice.createdAt)} · ${invoice.lines.length} ligne(s)',
+                  '${_dateFmt.format(invoice.createdAt)} · ${invoice.lines.length} ligne(s)${invoice.pendingSync ? ' · Sync en attente' : ''}',
                 ),
                 trailing: Text(formatPriceEuro(invoice.total)),
                 onTap: () {

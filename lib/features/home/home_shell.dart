@@ -1,21 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:connectivity_plus/connectivity_plus.dart';
+import '../../data/offline_sync_service.dart';
 import '../auth/auth_provider.dart';
 import '../billing/billing_screen.dart';
 import '../inventory/inventory_screen.dart';
 import '../pos/pos_entry_screen.dart';
 import '../products/products_list_screen.dart';
-
+import 'dart:async';
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
   ConsumerState<HomeShell> createState() => _HomeShellState();
+  
 }
 
-class _HomeShellState extends ConsumerState<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell>
+    with WidgetsBindingObserver {
   int _index = 0;
+Timer? _syncTimer;
+  @override
+void initState() {
+  super.initState();
+  // Sync au démarrage + toutes les 30 secondes
+  _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    ref.read(offlineSyncProvider).syncCurrentCompany();
+  });
+  // Sync immédiate au lancement
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    ref.read(offlineSyncProvider).syncCurrentCompany();
+  });
+}
+
+@override
+void dispose() {
+  _syncTimer?.cancel();
+  WidgetsBinding.instance.removeObserver(this);
+  super.dispose();
+}
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(offlineSyncProvider).syncCurrentCompany();
+    }
+  }
 
   Future<void> _confirmSignOut() async {
     final shouldLogout = await showDialog<bool>(

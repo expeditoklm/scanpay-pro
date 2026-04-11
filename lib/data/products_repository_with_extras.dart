@@ -2,26 +2,29 @@ import '../core/models/product.dart';
 import 'product_extras_repository.dart';
 import 'products_repository.dart';
 
-/// Décorateur qui ré-applique les extras (image référence + hash) depuis le stockage local.
+/// Decorateur qui reapplique les extras locaux (image de reference + hash).
 class ProductsRepositoryWithExtras implements ProductsRepository {
   ProductsRepositoryWithExtras(this._delegate, this._extras);
 
   final ProductsRepository _delegate;
   final ProductExtrasRepository _extras;
 
-  Future<Product> _apply(Product p) async {
-    final ex = await _extras.get(companyId: p.companyId, productId: p.id);
-    if (ex == null) return p;
-    return p.copyWith(
-      referenceImagePath: ex.referenceImagePath ?? p.referenceImagePath,
-      referenceImageHash: ex.referenceImageHash ?? p.referenceImageHash,
+  Future<Product> _apply(Product product) async {
+    final extras = await _extras.get(
+      companyId: product.companyId,
+      productId: product.id,
+    );
+    if (extras == null) return product;
+    return product.copyWith(
+      referenceImagePath: extras.referenceImagePath ?? product.referenceImagePath,
+      referenceImageHash: extras.referenceImageHash ?? product.referenceImageHash,
     );
   }
 
-  Future<List<Product>> _applyList(List<Product> list) async {
+  Future<List<Product>> _applyList(List<Product> products) async {
     final out = <Product>[];
-    for (final p in list) {
-      out.add(await _apply(p));
+    for (final product in products) {
+      out.add(await _apply(product));
     }
     return out;
   }
@@ -45,58 +48,68 @@ class ProductsRepositoryWithExtras implements ProductsRepository {
       startAfterName: startAfterName,
       startAfterId: startAfterId,
     );
-    return ProductsPage(items: await _applyList(page.items), nextCursor: page.nextCursor);
+    return ProductsPage(
+      items: await _applyList(page.items),
+      nextCursor: page.nextCursor,
+    );
   }
 
   @override
   Future<Product?> getById(String companyId, String productId) async {
-    final p = await _delegate.getById(companyId, productId);
-    if (p == null) return null;
-    return _apply(p);
+    final product = await _delegate.getById(companyId, productId);
+    if (product == null) return null;
+    return _apply(product);
   }
 
   @override
   Future<Product?> getBySku(String companyId, String sku) async {
-    final p = await _delegate.getBySku(companyId, sku);
-    if (p == null) return null;
-    return _apply(p);
+    final product = await _delegate.getBySku(companyId, sku);
+    if (product == null) return null;
+    return _apply(product);
   }
 
   @override
   Future<Product?> getByConsumerCode(String companyId, String consumerCode) async {
-    final p = await _delegate.getByConsumerCode(companyId, consumerCode);
-    if (p == null) return null;
-    return _apply(p);
+    final product = await _delegate.getByConsumerCode(companyId, consumerCode);
+    if (product == null) return null;
+    return _apply(product);
   }
 
   @override
   Future<Product> upsert(Product product) async {
-    // Si l’utilisateur a défini une image, on sauvegarde l’extra localement.
+    final saved = await _delegate.upsert(product);
     if (product.referenceImagePath != null || product.referenceImageHash != null) {
+      final existing = await _extras.get(
+        companyId: saved.companyId,
+        productId: saved.id,
+      );
       await _extras.set(
-        companyId: product.companyId,
-        productId: product.id,
+        companyId: saved.companyId,
+        productId: saved.id,
         extras: ProductExtras(
           referenceImagePath: product.referenceImagePath,
           referenceImageHash: product.referenceImageHash,
+          pendingUpload: existing?.pendingUpload ?? false,
         ),
       );
     }
-    final saved = await _delegate.upsert(product);
     return _apply(saved);
   }
 
   @override
   Future<void> bulkUpsert(String companyId, List<Product> products) async {
-    // On laisse le délégué gérer la création/maj; les extras se géreront via upsert individuel si besoin.
     await _delegate.bulkUpsert(companyId, products);
   }
 
   @override
-  Future<void> delete(String companyId, String productId) => _delegate.delete(companyId, productId);
+  Future<void> delete(String companyId, String productId) =>
+      _delegate.delete(companyId, productId);
 
   @override
-  Future<Product?> decrementStock(String companyId, String productId, int quantity) =>
+  Future<Product?> decrementStock(
+    String companyId,
+    String productId,
+    int quantity,
+  ) =>
       _delegate.decrementStock(companyId, productId, quantity);
 }
-
