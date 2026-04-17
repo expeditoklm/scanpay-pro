@@ -55,9 +55,16 @@ class AuthNotifier extends Notifier<AuthState?> {
 
   Future<AuthState> register({
     required String companyName,
+    required String commercialName,
+    required String rccm,
+    required String ifu,
+    required String address,
+    required String phone,
+    required String contactEmail,
     required String email,
     required String password,
     required String confirmPassword,
+    String? logoPath,
   }) async {
     final res = await _client
         .post(
@@ -65,6 +72,12 @@ class AuthNotifier extends Notifier<AuthState?> {
           headers: const {'Content-Type': 'application/json'},
           body: jsonEncode({
             'company_name': companyName.trim(),
+            'commercial_name': commercialName.trim(),
+            'rccm': rccm.trim(),
+            'ifu': ifu.trim(),
+            'address': address.trim(),
+            'phone': phone.trim(),
+            'contact_email': contactEmail.trim(),
             'email': email.trim(),
             'password': password,
             'confirm_password': confirmPassword,
@@ -73,6 +86,11 @@ class AuthNotifier extends Notifier<AuthState?> {
         .timeout(const Duration(seconds: 12));
     final session = _decodeAuthResponse(res);
     await setSession(session);
+    if (logoPath != null && logoPath.trim().isNotEmpty) {
+      final updated = await _uploadCompanyLogo(session, logoPath.trim());
+      await setSession(updated);
+      return updated;
+    }
     return session;
   }
 
@@ -108,6 +126,26 @@ class AuthNotifier extends Notifier<AuthState?> {
   Future<void> signOut() async {
     state = null;
     await _persist(null);
+  }
+
+  Future<AuthState> _uploadCompanyLogo(AuthState session, String logoPath) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$kErpBaseUrl/auth/company-logo'),
+    );
+    request.headers['Authorization'] = 'Bearer ${session.accessToken}';
+    request.files.add(await http.MultipartFile.fromPath('file', logoPath));
+    final streamed = await request.send().timeout(const Duration(seconds: 20));
+    final response = await http.Response.fromStream(streamed);
+    final body = _decodeBody(response);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return session.copyWith(
+        companyLogoUrl: body['company_logo_url'] as String?,
+        companyName: body['company_name']?.toString() ?? session.companyName,
+      );
+    }
+    final detail = body['detail']?.toString() ?? 'Erreur inconnue';
+    throw Exception(detail);
   }
 
   Future<String> forgotPassword({required String email}) async {

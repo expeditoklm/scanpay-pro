@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/gradient_button.dart';
 import 'cart_provider.dart';
 import 'pos_cart_screen.dart';
 import 'pos_scan_screen.dart';
@@ -36,14 +37,26 @@ class PosEntryScreen extends ConsumerWidget {
                       ),
                 ),
                 const SizedBox(height: 32),
-                FilledButton.icon(
+                GradientButton(
                   onPressed: () {
                     Navigator.of(context).push<void>(
                       MaterialPageRoute(builder: (_) => const PosScanScreen()),
                     );
                   },
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Text('Scanner un QR'),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.qr_code_scanner, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        'Scanner un QR',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(

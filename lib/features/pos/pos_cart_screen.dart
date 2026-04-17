@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 
@@ -11,6 +12,12 @@ import '../billing/billing_providers.dart';
 import '../products/products_providers.dart';
 import 'cart_provider.dart';
 import 'invoice_pdf.dart';
+
+final _receiptPreviewFormat = PdfPageFormat(
+  72 * PdfPageFormat.mm,
+  220 * PdfPageFormat.mm,
+  marginAll: 6 * PdfPageFormat.mm,
+);
 
 class PosCartScreen extends ConsumerStatefulWidget {
   const PosCartScreen({super.key});
@@ -55,21 +62,21 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
       if (!mounted) return;
 
       await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => _InvoicePreviewScreen(invoice: inv),
-        ),
+        MaterialPageRoute(builder: (_) => _InvoicePreviewScreen(invoice: inv)),
       );
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _checkoutLoading = false);
+      if (mounted) {
+        setState(() => _checkoutLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
-    final total = cart.fold<double>(0, (s, l) => s + l.lineTotal);
+    final total = cart.fold<double>(0, (sum, line) => sum + line.lineTotal);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Panier')),
@@ -79,7 +86,12 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
             Material(
               color: Theme.of(context).colorScheme.errorContainer,
               child: ListTile(
-                title: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
+                title: Text(
+                  _error!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
               ),
             ),
           Expanded(
@@ -88,12 +100,14 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: cart.length,
-                    itemBuilder: (context, i) {
-                      final line = cart[i];
+                    itemBuilder: (context, index) {
+                      final line = cart[index];
                       return Card(
                         child: ListTile(
                           title: Text(line.product.name),
-                          subtitle: Text('${formatPriceEuro(line.product.price)} × ${line.quantity}'),
+                          subtitle: Text(
+                            '${formatPriceEuro(line.product.price)} x ${line.quantity}',
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -131,7 +145,10 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Total : ${formatPriceEuro(total)}', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Total : ${formatPriceEuro(total)}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: cart.isEmpty || _checkoutLoading ? null : _checkout,
@@ -161,8 +178,11 @@ class _InvoicePreviewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Facture ${invoice.id.substring(0, 8)}…')),
+      appBar: AppBar(title: Text('Ticket ${invoice.id.substring(0, 8)}...')),
       body: PdfPreview(
+        initialPageFormat: _receiptPreviewFormat,
+        canChangePageFormat: false,
+        canDebug: false,
         build: (format) => buildInvoicePdf(invoice, format),
       ),
     );

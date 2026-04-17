@@ -21,273 +21,126 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   @override
   Widget build(BuildContext context) {
     final asyncProducts = ref.watch(productsListProvider);
+    final theme = Theme.of(context);
 
     return asyncProducts.when(
-      // ── Chargement ────────────────────────────────────────────────────────
       loading: () => const Center(child: CircularProgressIndicator()),
-
-      // ── Erreur réseau : on retente depuis le cache ─────────────────────
-      error: (error, stack) {
+      error: (error, _) {
         final isNetworkError = error.toString().contains('SocketException') ||
             error.toString().contains('ClientException') ||
             error.toString().contains('Connection') ||
             error.toString().contains('Network');
 
-        if (isNetworkError) {
-          // Relancer silencieusement depuis le cache persisté
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            ref.invalidate(productsListProvider);
-          });
-        }
-
         return Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  isNetworkError ? Icons.wifi_off_rounded : Icons.error_outline,
-                  size: 56,
-                  color: isNetworkError
-                      ? Colors.orange
-                      : Theme.of(context).colorScheme.error,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  isNetworkError
-                      ? 'Hors connexion'
-                      : 'Une erreur est survenue',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isNetworkError
-                      ? 'Impossible de joindre le serveur.\nVos données locales sont affichées.'
-                      : error.toString(),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: () => ref.invalidate(productsListProvider),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Réessayer'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-
-      // ── Données OK ────────────────────────────────────────────────────────
-      data: (products) {
-        final pendingCount = products.where((p) => p.pendingSync).length;
-        final filtered = _filterProducts(products);
-
-        if (products.isEmpty) {
-          return Center(
-            child: Padding(
+            child: Container(
               padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.inventory_2_outlined, size: 56),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Aucun produit',
-                    style: Theme.of(context).textTheme.titleMedium,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: const Color(0xFFD7E2F2)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x120F172A),
+                    blurRadius: 28,
+                    offset: Offset(0, 14),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Créez un produit ou importez un fichier CSV/Excel.',
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Icon(
+                      isNetworkError ? Icons.wifi_off_rounded : Icons.error_outline,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    isNetworkError
+                        ? 'Connexion indisponible'
+                        : 'Une erreur bloque les produits',
+                    style: theme.textTheme.titleMedium,
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: () => _openForm(context),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Nouveau produit'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _openImport(context),
-                        icon: const Icon(Icons.upload_file),
-                        label: const Text('Importer'),
-                      ),
-                    ],
+                  const SizedBox(height: 8),
+                  Text(
+                    isNetworkError
+                        ? 'L’app n’arrive pas a joindre le serveur. Si des produits existent deja en cache, ils seront recharges automatiquement.'
+                        : error.toString(),
+                    style: theme.textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: () => ref.invalidate(productsListProvider),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Recharger'),
                   ),
                 ],
               ),
             ),
-          );
-        }
+          ),
+        );
+      },
+      data: (products) {
+        final pendingCount = products.where((p) => p.pendingSync).length;
+        final filtered = _filterProducts(products);
 
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(productsListProvider),
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: filtered.length + 1,
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // ── Bannière hors-ligne ──────────────────────────────
-                    if (pendingCount > 0)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          border: Border.all(color: Colors.orange.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.cloud_upload_outlined,
-                                color: Colors.orange.shade700, size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                '$pendingCount produit${pendingCount > 1 ? 's' : ''} '
-                                'en attente de synchronisation',
-                                style: TextStyle(
-                                  color: Colors.orange.shade800,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // ── Barre recherche + boutons ────────────────────────
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            decoration: const InputDecoration(
-                              prefixIcon: Icon(Icons.search),
-                              hintText:
-                                  'Rechercher un produit, SKU ou description',
-                            ),
-                            onChanged: (value) =>
-                                setState(() => _query = value),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton.icon(
-                          onPressed: () => _openImport(context),
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text('Importer'),
-                        ),
-                        const SizedBox(width: 12),
-                        FilledButton.icon(
-                          onPressed: () => _openForm(context),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Nouveau'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (filtered.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24),
-                        child: Text(
-                          'Aucun produit trouvé pour "$_query".',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                  ],
-                );
-              }
-
-              final product = filtered[index - 1];
-              return Card(
-                child: ListTile(
-                  leading: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: product.pendingSync
-                            ? Colors.orange.shade100
-                            : null,
-                        child: Text(
-                          product.name.isNotEmpty
-                              ? product.name[0].toUpperCase()
-                              : '?',
-                          style: TextStyle(
-                            color: product.pendingSync
-                                ? Colors.orange.shade800
-                                : null,
-                          ),
-                        ),
-                      ),
-                      // ── Badge hors-ligne ────────────────────────────
-                      if (product.pendingSync)
-                        Positioned(
-                          right: -4,
-                          top: -4,
-                          child: Container(
-                            width: 14,
-                            height: 14,
-                            decoration: BoxDecoration(
-                              color: Colors.orange,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: Colors.white, width: 1.5),
-                            ),
-                            child: const Icon(
-                              Icons.cloud_upload,
-                              size: 8,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                    ],
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+            children: [
+              _ProductsHero(
+                pendingCount: pendingCount,
+                query: _query,
+                onQueryChanged: (value) => setState(() => _query = value),
+                onCreate: () => _openForm(context),
+                onImport: () => _openImport(context),
+              ),
+              const SizedBox(height: 16),
+              if (products.isEmpty)
+                _EmptyProductsState(
+                  onCreate: () => _openForm(context),
+                  onImport: () => _openImport(context),
+                )
+              else if (filtered.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 18),
+                  child: Text(
+                    'Aucun produit trouve pour "$_query".',
+                    style: theme.textTheme.bodyMedium,
                   ),
-                  title: Row(
-                    children: [
-                      Expanded(child: Text(product.name)),
-                      if (product.pendingSync)
-                        Tooltip(
-                          message: 'Non synchronisé — sera envoyé dès la reconnexion',
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade100,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Hors ligne',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.orange.shade800,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
+                )
+              else
+                ...filtered.map(
+                  (product) => Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: _ProductCard(
+                      product: product,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ProductDetailScreen(product: product),
                         ),
-                    ],
-                  ),
-                  subtitle: Text(_subtitle(product)),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ProductDetailScreen(product: product),
+                      ),
                     ),
                   ),
                 ),
-              );
-            },
+            ],
           ),
         );
       },
@@ -304,18 +157,6 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     }).toList();
   }
 
-  String _subtitle(Product product) {
-    final parts = <String>[
-      formatPriceEuro(product.price),
-      'Stock ${product.stock}',
-    ];
-    final sku = product.sku?.trim();
-    if (sku != null && sku.isNotEmpty) {
-      parts.add('SKU $sku');
-    }
-    return parts.join(' · ');
-  }
-
   Future<void> _openForm(BuildContext context) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ProductFormScreen()),
@@ -328,5 +169,368 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       MaterialPageRoute(builder: (_) => const ImportProductsScreen()),
     );
     ref.invalidate(productsListProvider);
+  }
+}
+
+class _ProductsHero extends StatelessWidget {
+  const _ProductsHero({
+    required this.pendingCount,
+    required this.query,
+    required this.onQueryChanged,
+    required this.onCreate,
+    required this.onImport,
+  });
+
+  final int pendingCount;
+  final String query;
+  final ValueChanged<String> onQueryChanged;
+  final VoidCallback onCreate;
+  final VoidCallback onImport;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0F172A), Color(0xFF1565D8), Color(0xFF22C1C3)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x220F172A),
+            blurRadius: 26,
+            offset: Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Catalogue intelligent',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Un espace produits plus propre, plus rapide et pret pour la vente moderne.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (pendingCount > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_upload_rounded, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '$pendingCount produit${pendingCount > 1 ? 's' : ''} en attente de synchronisation',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          TextField(
+            onChanged: onQueryChanged,
+            style: const TextStyle(color: Color(0xFF0F172A)),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search_rounded),
+              hintText: 'Rechercher un produit, un SKU ou une description',
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: const BorderSide(color: Colors.white, width: 1.3),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: onCreate,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF0F172A),
+                ),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Nouveau produit'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onImport,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.32),
+                  ),
+                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                ),
+                icon: const Icon(Icons.upload_file_rounded),
+                label: const Text('Importer'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductCard extends StatelessWidget {
+  const _ProductCard({
+    required this.product,
+    required this.onTap,
+  });
+
+  final Product product;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final subtitleParts = <String>[
+      formatPriceEuro(product.price),
+      'Stock ${product.stock}',
+      if ((product.sku ?? '').trim().isNotEmpty) 'SKU ${product.sku!.trim()}',
+    ];
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(26),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: const Color(0xFFD7E2F2)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x120F172A),
+                blurRadius: 24,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: product.pendingSync
+                        ? const [Color(0xFFF59E0B), Color(0xFFF97316)]
+                        : const [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  product.name.isEmpty ? '?' : product.name[0].toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (product.pendingSync)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF4E5),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              'Offline',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFB45309),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitleParts.join(' • '),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    if ((product.description ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        product.description!.trim(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF475569),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyProductsState extends StatelessWidget {
+  const _EmptyProductsState({
+    required this.onCreate,
+    required this.onImport,
+  });
+
+  final VoidCallback onCreate;
+  final VoidCallback onImport;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0xFFD7E2F2)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: const Icon(
+              Icons.inventory_2_rounded,
+              size: 34,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Aucun produit pour le moment',
+            style: theme.textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Cree ton premier produit ou importe rapidement un fichier CSV ou Excel.',
+            style: theme.textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: onCreate,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Creer un produit'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onImport,
+                icon: const Icon(Icons.upload_file_rounded),
+                label: const Text('Importer'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

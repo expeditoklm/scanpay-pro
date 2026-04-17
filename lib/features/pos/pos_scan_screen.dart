@@ -88,11 +88,23 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     }
 
     final repo = ref.read(productsRepositoryProvider);
-    final product = await repo.getById(auth.companyId, payload.productId);
+    Product? product = await repo.getById(auth.companyId, payload.productId);
+    product ??= await repo
+        .listProducts(auth.companyId)
+        .then(
+          (items) => items.cast<Product?>().firstWhere(
+                (item) => item?.id == payload.productId,
+                orElse: () => null,
+              ),
+        );
+    if (product == null && (payload.authCode?.isNotEmpty ?? false)) {
+      product = await repo.getByConsumerCode(auth.companyId, payload.authCode!);
+    }
     if (product == null) {
       setState(() {
         _busy = false;
-        _error = 'Produit introuvable';
+        _error =
+            'Produit introuvable pour ce QR. Verifiez que le produit est bien charge dans la boutique.';
       });
       return;
     }
@@ -109,15 +121,15 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
 
     await _controller.stop();
 
-    Product? toAdd = product;
+    final toAdd = product;
     final hasReferenceImage =
-        (product.referenceImagePath ?? '').isNotEmpty ||
-        (product.referenceImageUrl ?? '').isNotEmpty;
+        (toAdd.referenceImagePath ?? '').isNotEmpty ||
+        (toAdd.referenceImageUrl ?? '').isNotEmpty;
     if (hasReferenceImage) {
       final ok = await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
-        builder: (ctx) => AntiFraudSheet(product: product),
+        builder: (ctx) => AntiFraudSheet(product: toAdd),
       );
       if (ok != true) {
         if (mounted) {
@@ -128,7 +140,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
       }
     }
 
-    ref.read(cartProvider.notifier).addProduct(toAdd!);
+    ref.read(cartProvider.notifier).addProduct(toAdd);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${toAdd.name} ajouté au panier')),
