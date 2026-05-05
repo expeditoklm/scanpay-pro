@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/product.dart';
+import '../../core/services/product_share_service.dart';
+import '../../core/utils/product_image.dart';
 import '../../core/utils/price_formatter.dart';
 import 'import_products_screen.dart';
 import 'product_detail_screen.dart';
@@ -17,6 +19,8 @@ class ProductsListScreen extends ConsumerStatefulWidget {
 
 class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   String _query = '';
+  final Set<String> _selectedProductIds = <String>{};
+  bool _isSharing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +83,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                   const SizedBox(height: 8),
                   Text(
                     isNetworkError
-                        ? 'L’app n’arrive pas a joindre le serveur. Si des produits existent deja en cache, ils seront recharges automatiquement.'
+                        ? 'L app n arrive pas a joindre le serveur. Si des produits existent deja en cache, ils seront recharges automatiquement.'
                         : error.toString(),
                     style: theme.textTheme.bodySmall,
                     textAlign: TextAlign.center,
@@ -99,6 +103,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       data: (products) {
         final pendingCount = products.where((p) => p.pendingSync).length;
         final filtered = _filterProducts(products);
+        final selectionCount = _selectedProductIds.length;
 
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(productsListProvider),
@@ -108,9 +113,15 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               _ProductsHero(
                 pendingCount: pendingCount,
                 query: _query,
+                selectionCount: selectionCount,
+                isSharing: _isSharing,
                 onQueryChanged: (value) => setState(() => _query = value),
                 onCreate: () => _openForm(context),
                 onImport: () => _openImport(context),
+                onShareSelection: selectionCount == 0
+                    ? null
+                    : () => _shareSelectedProducts(products),
+                onClearSelection: selectionCount == 0 ? null : _clearSelection,
               ),
               const SizedBox(height: 16),
               if (products.isEmpty)
@@ -126,20 +137,31 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                     style: theme.textTheme.bodyMedium,
                   ),
                 )
-              else
+              else ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    selectionCount == 0
+                        ? 'Appui long sur un produit pour lancer la selection.'
+                        : 'Touchez pour cocher ou decocher les produits a partager.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
                 ...filtered.map(
                   (product) => Padding(
                     padding: const EdgeInsets.only(bottom: 14),
                     child: _ProductCard(
                       product: product,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => ProductDetailScreen(product: product),
-                        ),
-                      ),
+                      isSelected: _selectedProductIds.contains(product.id),
+                      selectionMode: selectionCount > 0,
+                      onTap: () => _handleProductTap(context, product),
+                      onLongPress: () => _toggleSelection(product.id),
                     ),
                   ),
                 ),
+              ],
             ],
           ),
         );
@@ -170,22 +192,91 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     );
     ref.invalidate(productsListProvider);
   }
+
+  Future<void> _handleProductTap(BuildContext context, Product product) async {
+    if (_selectedProductIds.isNotEmpty) {
+      _toggleSelection(product.id);
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProductDetailScreen(product: product),
+      ),
+    );
+  }
+
+  void _toggleSelection(String productId) {
+    setState(() {
+      if (_selectedProductIds.contains(productId)) {
+        _selectedProductIds.remove(productId);
+      } else {
+        _selectedProductIds.add(productId);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() => _selectedProductIds.clear());
+  }
+
+  Future<void> _shareSelectedProducts(List<Product> products) async {
+    if (_isSharing) return;
+
+    final selectedProducts = products
+        .where((product) => _selectedProductIds.contains(product.id))
+        .toList();
+    if (selectedProducts.isEmpty) return;
+
+    setState(() => _isSharing = true);
+    try {
+      await ProductShareService().shareProductsToWhatsApp(selectedProducts);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${selectedProducts.length} image${selectedProducts.length > 1 ? 's' : ''} prepare${selectedProducts.length > 1 ? 's' : ''} pour un seul envoi WhatsApp.',
+          ),
+        ),
+      );
+      _clearSelection();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSharing = false);
+      }
+    }
+  }
 }
 
 class _ProductsHero extends StatelessWidget {
   const _ProductsHero({
     required this.pendingCount,
     required this.query,
+    required this.selectionCount,
+    required this.isSharing,
     required this.onQueryChanged,
     required this.onCreate,
     required this.onImport,
+    required this.onShareSelection,
+    required this.onClearSelection,
   });
 
   final int pendingCount;
   final String query;
+  final int selectionCount;
+  final bool isSharing;
   final ValueChanged<String> onQueryChanged;
   final VoidCallback onCreate;
   final VoidCallback onImport;
+  final VoidCallback? onShareSelection;
+  final VoidCallback? onClearSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -249,6 +340,34 @@ class _ProductsHero extends StatelessWidget {
               ),
             ],
           ),
+          if (selectionCount > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.checklist_rounded, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '$selectionCount produit${selectionCount > 1 ? 's' : ''} selectionne${selectionCount > 1 ? 's' : ''}. Le partage cree une image avec la description de chaque produit en legende.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (pendingCount > 0) ...[
             const SizedBox(height: 16),
             Container(
@@ -326,6 +445,38 @@ class _ProductsHero extends StatelessWidget {
                 icon: const Icon(Icons.upload_file_rounded),
                 label: const Text('Importer'),
               ),
+              if (selectionCount > 0)
+                FilledButton.icon(
+                  onPressed: isSharing ? null : onShareSelection,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: isSharing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.share_rounded),
+                  label: const Text('Partager WhatsApp'),
+                ),
+              if (selectionCount > 0)
+                OutlinedButton.icon(
+                  onPressed: isSharing ? null : onClearSelection,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.32),
+                    ),
+                    backgroundColor: Colors.white.withValues(alpha: 0.06),
+                  ),
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text('Annuler selection'),
+                ),
             ],
           ),
         ],
@@ -338,10 +489,16 @@ class _ProductCard extends StatelessWidget {
   const _ProductCard({
     required this.product,
     required this.onTap,
+    required this.onLongPress,
+    required this.isSelected,
+    required this.selectionMode,
   });
 
   final Product product;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final bool isSelected;
+  final bool selectionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -356,13 +513,17 @@ class _ProductCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(26),
         child: Ink(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isSelected ? const Color(0xFFE8F7EF) : Colors.white,
             borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: const Color(0xFFD7E2F2)),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF25D366) : const Color(0xFFD7E2F2),
+              width: isSelected ? 1.6 : 1,
+            ),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x120F172A),
@@ -377,22 +538,37 @@ class _ProductCard extends StatelessWidget {
                 width: 58,
                 height: 58,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: product.pendingSync
-                        ? const [Color(0xFFF59E0B), Color(0xFFF97316)]
-                        : const [Color(0xFF1565D8), Color(0xFF22C1C3)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  product.name.isEmpty ? '?' : product.name[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 20,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: SizedBox.expand(
+                    child: buildProductImage(
+                      product: product,
+                      fit: BoxFit.cover,
+                      fallback: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: product.pendingSync
+                                ? const [Color(0xFFF59E0B), Color(0xFFF97316)]
+                                : const [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          product.name.isEmpty ? '?' : product.name[0].toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -434,7 +610,7 @@ class _ProductCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      subtitleParts.join(' • '),
+                      subtitleParts.join(' | '),
                       style: theme.textTheme.bodySmall,
                     ),
                     if ((product.description ?? '').trim().isNotEmpty) ...[
@@ -452,7 +628,16 @@ class _ProductCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Icon(Icons.chevron_right_rounded),
+              Icon(
+                selectionMode
+                    ? (isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded)
+                    : Icons.chevron_right_rounded,
+                color: selectionMode
+                    ? (isSelected ? const Color(0xFF25D366) : const Color(0xFF94A3B8))
+                    : null,
+              ),
             ],
           ),
         ),

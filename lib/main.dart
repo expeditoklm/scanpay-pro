@@ -10,12 +10,13 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final initialAuth =
       AuthNotifier.decodeStoredState(prefs.getString(kAuthStorageKey));
+  final onboardingSeen = prefs.getBool(kOnboardingSeenStorageKey) ?? false;
   runApp(
     ProviderScope(
       overrides: [
         initialAuthStateProvider.overrideWithValue(initialAuth),
       ],
-      child: const TpeQrSaasApp(),
+      child: TpeQrSaasApp(initialOnboardingSeen: onboardingSeen),
     ),
   );
 }

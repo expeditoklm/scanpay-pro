@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/config/erp_config.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/exit_guard.dart';
 import '../../data/offline_sync_service.dart';
 import '../auth/auth_provider.dart';
 import '../billing/billing_screen.dart';
@@ -97,9 +98,10 @@ class _HomeShellState extends ConsumerState<HomeShell>
       BillingScreen(),
     ];
 
-    return Scaffold(
-      extendBody: true,
-      appBar: AppBar(
+    return ExitGuard(
+      child: Scaffold(
+        extendBody: true,
+        appBar: AppBar(
         titleSpacing: 0,
         leadingWidth: 76,
         leading: Padding(
@@ -143,20 +145,21 @@ class _HomeShellState extends ConsumerState<HomeShell>
             icon: const Icon(Icons.logout_rounded),
           ),
         ],
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: AppTheme.brandShellGradient,
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
         ),
-        child: IndexedStack(index: _index, children: pages),
-      ),
-      bottomNavigationBar: _HomeBottomBar(
-        currentIndex: _index,
-        onChanged: (value) => setState(() => _index = value),
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: AppTheme.brandShellGradient,
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: IndexedStack(index: _index, children: pages),
+        ),
+        bottomNavigationBar: _HomeBottomBar(
+          currentIndex: _index,
+          onChanged: (value) => setState(() => _index = value),
+        ),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/widgets/exit_guard.dart';
 import '../../core/widgets/gradient_button.dart';
 import 'auth_provider.dart';
 
@@ -118,50 +119,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFF4F8FD), Color(0xFFEAF3FF), Color(0xFFF7FBFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+    return ExitGuard(
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFF4F8FD), Color(0xFFEAF3FF), Color(0xFFF7FBFF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: 430,
-                      minHeight: constraints.maxHeight - 40,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFFFFFF), Color(0xFFF6FAFF)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(32),
-                          border: Border.all(color: const Color(0xFFD7E2F2)),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x1A0F172A),
-                              blurRadius: 40,
-                              offset: Offset(0, 20),
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: 430,
+                        minHeight: constraints.maxHeight - 40,
+                      ),
+                      child: IntrinsicHeight(
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFFFFF), Color(0xFFF6FAFF)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                          ],
-                        ),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
+                            borderRadius: BorderRadius.circular(32),
+                            border: Border.all(color: const Color(0xFFD7E2F2)),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x1A0F172A),
+                                blurRadius: 40,
+                                offset: Offset(0, 20),
+                              ),
+                            ],
+                          ),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
                               Align(
                                 child: Container(
                                   width: 88,
@@ -525,14 +527,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 ),
                               ),
                             ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
