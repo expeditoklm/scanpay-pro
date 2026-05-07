@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../core/widgets/exit_guard.dart';
 
@@ -18,28 +19,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   bool _loading = false;
+  bool _showLaunchVideo = true;
 
   static const _slides = [
     _OnboardingSlideData(
-      title: 'Vendez plus vite',
+      title: 'Scannez pour vendre',
       description:
-          'Gerez vos produits, vos prix et vos partages WhatsApp depuis une seule application.',
-      icon: Icons.rocket_launch_rounded,
-      colors: [Color(0xFF0F172A), Color(0xFF1565D8)],
+          'Scannez le QR du produit, vérifiez l’article et validez la vente en quelques secondes.',
+      imagePath: 'assets/onboarding/onboarding_scan_real.png',
     ),
     _OnboardingSlideData(
-      title: 'Une caisse moderne',
+      title: 'Stock mis à jour',
       description:
-          'Scannez, facturez et suivez votre activite avec une interface simple pour la boutique.',
-      icon: Icons.point_of_sale_rounded,
-      colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+          'Chaque vente ajuste automatiquement les quantités, les prix et l’historique de votre boutique.',
+      imagePath: 'assets/onboarding/onboarding_inventory_real.png',
     ),
     _OnboardingSlideData(
-      title: 'Pret pour demarrer',
+      title: 'Reçus et paiements',
       description:
-          'Creez votre compte ou connectez-vous pour commencer a vendre en quelques minutes.',
-      icon: Icons.storefront_rounded,
-      colors: [Color(0xFF0EA5A4), Color(0xFFF59E0B)],
+          'Retrouvez les reçus, suivez les encaissements et gardez une trace claire de chaque opération.',
+      imagePath: 'assets/onboarding/onboarding_growth_real.png',
     ),
   ];
 
@@ -51,6 +50,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showLaunchVideo) {
+      return _LaunchVideoIntro(
+        onFinished: () {
+          if (!mounted) return;
+          setState(() => _showLaunchVideo = false);
+        },
+      );
+    }
+
     final theme = Theme.of(context);
     final isLastPage = _currentPage == _slides.length - 1;
 
@@ -71,9 +79,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   Align(
                     alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: _loading ? null : _finish,
-                      child: const Text('Passer'),
+                    child: Opacity(
+                      opacity: isLastPage ? 0.0 : 1.0,
+                      child: TextButton(
+                        onPressed: (_loading || isLastPage) ? null : _finish,
+                        child: const Text('Passer'),
+                      ),
                     ),
                   ),
                   Expanded(
@@ -135,7 +146,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               ),
                             )
                           : Text(
-                              isLastPage ? 'Commencer' : 'Suivant',
+                              isLastPage ? 'Créer mon compte' : 'Continuer',
                               style: theme.textTheme.titleSmall?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
@@ -164,6 +175,102 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 }
 
+class _LaunchVideoIntro extends StatefulWidget {
+  const _LaunchVideoIntro({required this.onFinished});
+
+  final VoidCallback onFinished;
+
+  @override
+  State<_LaunchVideoIntro> createState() => _LaunchVideoIntroState();
+}
+
+class _LaunchVideoIntroState extends State<_LaunchVideoIntro> {
+  late final VideoPlayerController _controller;
+  bool _finished = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.asset(
+      'assets/onboarding/launch_video.mp4',
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    )
+      ..setLooping(false)
+      ..initialize().then((_) {
+        if (!mounted) return;
+        setState(() {});
+        _controller.play();
+      }).catchError((_) {
+        _finish();
+      });
+    _controller.addListener(_handleVideoTick);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_handleVideoTick)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleVideoTick() {
+    if (!_controller.value.isInitialized) return;
+    final position = _controller.value.position;
+    final duration = _controller.value.duration;
+    if (duration > Duration.zero && position >= duration) {
+      _finish();
+    }
+  }
+
+  void _finish() {
+    if (_finished) return;
+    _finished = true;
+    widget.onFinished();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ExitGuard(
+      child: Scaffold(
+        backgroundColor: const Color(0xFF061F54),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_controller.value.isInitialized)
+              FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller.value.size.width,
+                  height: _controller.value.size.height,
+                  child: VideoPlayer(_controller),
+                ),
+              )
+            else
+              const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 12,
+              right: 16,
+              child: TextButton(
+                onPressed: _finish,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: const Color(0x66000000),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+                child: const Text('Passer'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _OnboardingSlide extends StatelessWidget {
   const _OnboardingSlide({required this.slide});
 
@@ -172,6 +279,8 @@ class _OnboardingSlide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final imageSize = MediaQuery.sizeOf(context).shortestSide < 380 ? 260.0 : 300.0;
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 430),
@@ -179,14 +288,10 @@ class _OnboardingSlide extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 260,
-              height: 260,
+              width: imageSize,
+              height: imageSize,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: slide.colors,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(42),
                 boxShadow: const [
                   BoxShadow(
@@ -196,10 +301,12 @@ class _OnboardingSlide extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Icon(
-                slide.icon,
-                size: 110,
-                color: Colors.white,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(42),
+                child: Image.asset(
+                  slide.imagePath,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             const SizedBox(height: 36),
@@ -231,12 +338,10 @@ class _OnboardingSlideData {
   const _OnboardingSlideData({
     required this.title,
     required this.description,
-    required this.icon,
-    required this.colors,
+    required this.imagePath,
   });
 
   final String title;
   final String description;
-  final IconData icon;
-  final List<Color> colors;
+  final String imagePath;
 }
