@@ -25,7 +25,8 @@ class ErpProductsRepository implements ProductsRepository {
   final http.Client _client;
   final Map<String, Product> _cache = {};
   final OfflineStorage _offlineStorage = OfflineStorage();
-  final ProductExtrasRepository _productExtrasRepository = ProductExtrasRepository();
+  final ProductExtrasRepository _productExtrasRepository =
+      ProductExtrasRepository();
   final Uuid _uuid = const Uuid();
 
   Map<String, String> get _headers {
@@ -48,9 +49,10 @@ class ErpProductsRepository implements ProductsRepository {
       sku: json['sku'] as String?,
       description: json['description'] as String?,
       referenceImagePath: null,
-      referenceImageUrl: referenceImageUrl != null && referenceImageUrl.isNotEmpty
-          ? referenceImageUrl
-          : imageUrl,
+      referenceImageUrl:
+          referenceImageUrl != null && referenceImageUrl.isNotEmpty
+              ? referenceImageUrl
+              : imageUrl,
       referenceImageHash: json['reference_image_hash'] as String?,
       consumerCode: json['consumer_code'] as String?,
     );
@@ -62,6 +64,9 @@ class ErpProductsRepository implements ProductsRepository {
         'stock': p.stock,
         'sku': p.sku,
         'description': p.description,
+        'consumer_code': p.consumerCode,
+        'reference_image_url': p.referenceImageUrl,
+        'reference_image_hash': p.referenceImageHash,
       };
 
   Future<void> _persistCache(String companyId) async {
@@ -83,7 +88,8 @@ class ErpProductsRepository implements ProductsRepository {
     return _offlineStorage.savePendingProductOps(companyId, ops);
   }
 
-  Future<List<Product>> _mergeWithPending(String companyId, List<Product> base) async {
+  Future<List<Product>> _mergeWithPending(
+      String companyId, List<Product> base) async {
     final merged = {for (final product in base) product.id: product};
     final ops = await _pendingOps(companyId);
     for (final op in ops) {
@@ -125,8 +131,9 @@ class ErpProductsRepository implements ProductsRepository {
   }
 
   Future<http.Response> _getWithRetry(Uri uri) async {
-    var res =
-        await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 8));
+    var res = await _client
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 8));
     if (res.statusCode == 401) {
       final ok = await ref.read(authProvider.notifier).refreshIfNeeded();
       if (ok) {
@@ -154,8 +161,9 @@ class ErpProductsRepository implements ProductsRepository {
   }
 
   Future<http.Response> _putWithRetry(Uri uri, String body) async {
-    var res =
-        await _client.put(uri, headers: _headers, body: body).timeout(const Duration(seconds: 8));
+    var res = await _client
+        .put(uri, headers: _headers, body: body)
+        .timeout(const Duration(seconds: 8));
     if (res.statusCode == 401) {
       final ok = await ref.read(authProvider.notifier).refreshIfNeeded();
       if (ok) {
@@ -223,14 +231,16 @@ class ErpProductsRepository implements ProductsRepository {
         request.headers.addAll({
           'Authorization': _headers['Authorization'] ?? '',
         });
-        request.files.add(await http.MultipartFile.fromPath('file', sourcePath));
+        request.files
+            .add(await http.MultipartFile.fromPath('file', sourcePath));
         streamed = await request.send().timeout(const Duration(seconds: 20));
       }
     }
 
     final uploadResponse = await http.Response.fromStream(streamed);
     if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
-      throw Exception('Upload image ERP impossible (${uploadResponse.statusCode})');
+      throw Exception(
+          'Upload image ERP impossible (${uploadResponse.statusCode})');
     }
 
     final uploadJson = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
@@ -244,7 +254,8 @@ class ErpProductsRepository implements ProductsRepository {
       patchBody,
     );
     if (patchResponse.statusCode < 200 || patchResponse.statusCode >= 300) {
-      throw Exception('Mise à jour image ERP impossible (${patchResponse.statusCode})');
+      throw Exception(
+          'Mise à jour image ERP impossible (${patchResponse.statusCode})');
     }
 
     final updated = _fromErpJson(
@@ -420,7 +431,8 @@ class ErpProductsRepository implements ProductsRepository {
   @override
   Future<Product?> getById(String companyId, String productId) async {
     try {
-      final res = await _getWithRetry(Uri.parse('$_base/api/products/$productId'));
+      final res =
+          await _getWithRetry(Uri.parse('$_base/api/products/$productId'));
       if (res.statusCode == 200) {
         final product = _fromErpJson(
           jsonDecode(res.body) as Map<String, dynamic>,
@@ -452,7 +464,8 @@ class ErpProductsRepository implements ProductsRepository {
   }
 
   @override
-  Future<Product?> getByConsumerCode(String companyId, String consumerCode) async {
+  Future<Product?> getByConsumerCode(
+      String companyId, String consumerCode) async {
     final code = consumerCode.trim();
     if (code.isEmpty) return null;
     for (final product in _cache.values) {
@@ -475,7 +488,8 @@ class ErpProductsRepository implements ProductsRepository {
     try {
       final res = product.id.isEmpty
           ? await _postWithRetry(Uri.parse('$_base/api/products'), body)
-          : await _putWithRetry(Uri.parse('$_base/api/products/${product.id}'), body);
+          : await _putWithRetry(
+              Uri.parse('$_base/api/products/${product.id}'), body);
       if (res.statusCode == 200 || res.statusCode == 201) {
         final saved = _fromErpJson(
           jsonDecode(res.body) as Map<String, dynamic>,
@@ -518,7 +532,8 @@ class ErpProductsRepository implements ProductsRepository {
   @override
   Future<void> delete(String companyId, String productId) async {
     try {
-      final res = await _deleteWithRetry(Uri.parse('$_base/api/products/$productId'));
+      final res =
+          await _deleteWithRetry(Uri.parse('$_base/api/products/$productId'));
       if (res.statusCode != 200) {
         throw Exception('ERP delete ${res.statusCode}');
       }
@@ -534,7 +549,8 @@ class ErpProductsRepository implements ProductsRepository {
   }
 
   @override
-  Future<Product?> decrementStock(String companyId, String productId, int quantity) async {
+  Future<Product?> decrementStock(
+      String companyId, String productId, int quantity) async {
     try {
       final res = await _patchWithRetry(
         Uri.parse('$_base/api/products/$productId/stock'),

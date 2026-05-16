@@ -2,9 +2,14 @@
 /// Synchronisation des ventes vers l'ERP FastAPI via JWT Bearer.
 /// L'URL et le token sont passés dynamiquement depuis auth_provider.
 import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:tpe_qr_saas/core/config/erp_config.dart';
 
+final externalStockSyncProvider = Provider<ExternalStockSync>((ref) {
+  return HttpExternalStockSync();
+});
 
 abstract class ExternalStockSync {
   Future<void> sendSale({

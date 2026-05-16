@@ -9,7 +9,7 @@ import '../../core/widgets/exit_guard.dart';
 import '../../data/offline_sync_service.dart';
 import '../auth/auth_provider.dart';
 import '../billing/billing_screen.dart';
-import '../pos/pos_entry_screen.dart';
+import '../pos/pos_scan_screen.dart';
 import '../products/products_list_screen.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
@@ -21,7 +21,7 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell>
     with WidgetsBindingObserver {
-  int _index = 0;
+  int _index = 1;
   Timer? _syncTimer;
 
   @override
@@ -92,59 +92,60 @@ class _HomeShellState extends ConsumerState<HomeShell>
             .map((part) => part.isEmpty ? '' : part[0].toUpperCase())
             .join();
 
-    final pages = const [
-      ProductsListScreen(),
-      PosEntryScreen(),
-      BillingScreen(),
+    final pages = [
+      const ProductsListScreen(),
+      PosScanScreen(embedded: true, active: _index == 1),
+      const BillingScreen(),
     ];
 
     return ExitGuard(
       child: Scaffold(
         extendBody: true,
         appBar: AppBar(
-        titleSpacing: 0,
-        leadingWidth: 76,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
-          child: CircleAvatar(
-            backgroundColor:
-                Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-            foregroundImage:
-                absoluteLogoUrl != null ? NetworkImage(absoluteLogoUrl) : null,
-            child: absoluteLogoUrl == null
-                ? Text(
-                    initials.isEmpty ? 'BT' : initials,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  )
-                : null,
+          titleSpacing: 0,
+          leadingWidth: 76,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+            child: CircleAvatar(
+              backgroundColor:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+              foregroundImage: absoluteLogoUrl != null
+                  ? NetworkImage(absoluteLogoUrl)
+                  : null,
+              child: absoluteLogoUrl == null
+                  ? Text(
+                      initials.isEmpty ? 'BT' : initials,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    )
+                  : null,
+            ),
           ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(company),
-            Text(
-              (auth?.plan.isNotEmpty ?? false)
-                  ? 'Plan ${auth!.plan.toUpperCase()}'
-                  : 'Tableau de bord',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    letterSpacing: 0.5,
-                  ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(company),
+              Text(
+                (auth?.plan.isNotEmpty ?? false)
+                    ? 'Plan ${auth!.plan.toUpperCase()}'
+                    : 'Tableau de bord',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      letterSpacing: 0.5,
+                    ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Deconnexion',
+              onPressed: _confirmSignOut,
+              icon: const Icon(Icons.logout_rounded),
             ),
           ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Deconnexion',
-            onPressed: _confirmSignOut,
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
         ),
         body: Container(
           decoration: const BoxDecoration(

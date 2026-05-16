@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/models/invoice.dart';
+import '../../core/services/xprinter_service.dart';
 import '../../core/utils/price_formatter.dart';
 import '../../data/repository_providers.dart';
 import '../auth/auth_provider.dart';
@@ -27,6 +28,8 @@ class PosCartScreen extends ConsumerStatefulWidget {
 }
 
 class _PosCartScreenState extends ConsumerState<PosCartScreen> {
+  final XPrinterService _xprinter = const XPrinterService();
+
   bool _checkoutLoading = false;
   String? _error;
 
@@ -59,10 +62,17 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
       ref.read(cartProvider.notifier).clear();
       ref.invalidate(productsListProvider);
       ref.read(salesRefreshProvider.notifier).state++;
+      final printResult = await _xprinter.printSavedInvoice(inv);
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(printResult.message),
+          backgroundColor: printResult.success ? Colors.green : Colors.orange,
+        ),
+      );
 
       await Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: (_) => _InvoicePreviewScreen(invoice: inv)),
+        MaterialPageRoute(builder: (_) => InvoicePreviewScreen(invoice: inv)),
       );
     } catch (e) {
       setState(() => _error = e.toString());
@@ -170,8 +180,8 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
   }
 }
 
-class _InvoicePreviewScreen extends StatelessWidget {
-  const _InvoicePreviewScreen({required this.invoice});
+class InvoicePreviewScreen extends StatelessWidget {
+  const InvoicePreviewScreen({super.key, required this.invoice});
 
   final Invoice invoice;
 
