@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/models/product.dart';
 import '../../core/utils/plan_quota.dart';
@@ -22,6 +24,7 @@ class ProductFormScreen extends ConsumerStatefulWidget {
 class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
+  final _codeCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
   final _stockCtrl = TextEditingController(text: '0');
   final _picker = ImagePicker();
@@ -33,6 +36,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _codeCtrl.dispose();
     _priceCtrl.dispose();
     _stockCtrl.dispose();
     super.dispose();
@@ -54,6 +58,54 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
     if (picked == null) return;
     setState(() => _imagePath = picked.path);
+  }
+
+  Future<void> _scanProductCode() async {
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Camera refusee. Activez-la dans les parametres.'),
+        ),
+      );
+      return;
+    }
+
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _ProductCodeScannerScreen()),
+    );
+    if (code == null || code.trim().isEmpty || !mounted) return;
+    final normalizedCode = code.trim();
+    final auth = ref.read(authProvider);
+    if (auth == null) return;
+
+    if (await _barcodeExists(auth.companyId, normalizedCode)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ce code-barres existe deja: $normalizedCode'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _codeCtrl.text = normalizedCode);
+  }
+
+  Future<bool> _barcodeExists(String companyId, String code) async {
+    List existing;
+    try {
+      existing = await ref.read(productsRepositoryProvider).listProducts(companyId);
+    } catch (_) {
+      existing = await OfflineStorage().loadProducts(companyId);
+    }
+    return existing.any((product) {
+      return (product.sku ?? '').trim() == code ||
+          (product.consumerCode ?? '').trim() == code;
+    });
   }
 
   Future<void> _save() async {
@@ -86,6 +138,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         );
       }
 
+      final productCode = _codeCtrl.text.trim();
+      if (productCode.isNotEmpty) {
+        final duplicateCode = existing.any((product) {
+          return (product.sku ?? '').trim() == productCode ||
+              (product.consumerCode ?? '').trim() == productCode;
+        });
+        if (duplicateCode) {
+          throw Exception(
+            'Ce code-barres est deja associe a un autre produit.',
+          );
+        }
+      }
+
       final plan = auth.plan.isEmpty ? 'free' : auth.plan;
       final quotaCheck = checkProductQuota(
         plan: plan,
@@ -108,6 +173,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         name: _nameCtrl.text.trim(),
         price: price,
         stock: stock,
+        sku: productCode.isEmpty ? null : productCode,
+        consumerCode: productCode.isEmpty ? null : productCode,
       );
 
       final saved = await repo.upsert(product);
@@ -228,6 +295,30 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                             (value == null || value.trim().isEmpty)
                                 ? 'Requis'
                                 : null,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _codeCtrl,
+                              textInputAction: TextInputAction.next,
+                              decoration: const InputDecoration(
+                                labelText: 'Code-barres',
+                                hintText: 'Scannez ou saisissez le code',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.qr_code_rounded),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filledTonal(
+                            tooltip: 'Scanner code-barres',
+                            onPressed: _scanProductCode,
+                            icon: const Icon(Icons.document_scanner_rounded),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -426,6 +517,99 @@ class _FormSection extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           child,
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductCodeScannerScreen extends StatefulWidget {
+  const _ProductCodeScannerScreen();
+
+  @override
+  State<_ProductCodeScannerScreen> createState() =>
+      _ProductCodeScannerScreenState();
+}
+
+class _ProductCodeScannerScreenState extends State<_ProductCodeScannerScreen> {
+  final MobileScannerController _controller = MobileScannerController(
+    formats: const [
+      BarcodeFormat.qrCode,
+      BarcodeFormat.ean13,
+      BarcodeFormat.ean8,
+      BarcodeFormat.code128,
+      BarcodeFormat.code39,
+      BarcodeFormat.code93,
+      BarcodeFormat.upcA,
+      BarcodeFormat.upcE,
+      BarcodeFormat.itf,
+    ],
+  );
+  bool _handled = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_handled) return;
+    String? code;
+    for (final barcode in capture.barcodes) {
+      final raw = barcode.rawValue?.trim();
+      if (raw != null && raw.isNotEmpty) {
+        code = raw;
+        break;
+      }
+    }
+    if (code == null) return;
+    _handled = true;
+    Navigator.of(context).pop(code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Scanner code-barres')),
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: _onDetect,
+          ),
+          Center(
+            child: Container(
+              width: 260,
+              height: 180,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 2.5),
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 24,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.68),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Text(
+                  'Scannez le code-barres du produit a enregistrer.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

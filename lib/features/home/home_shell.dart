@@ -208,7 +208,7 @@ class _HomeBottomBar extends StatelessWidget {
                     Expanded(
                       child: _DockItem(
                         label: 'Produits',
-                        icon: Icons.home_rounded,
+                        icon: Icons.inventory_2_rounded,
                         selected: currentIndex == 0,
                         onTap: () => onChanged(0),
                       ),
@@ -216,7 +216,7 @@ class _HomeBottomBar extends StatelessWidget {
                     const SizedBox(width: 76),
                     Expanded(
                       child: _DockItem(
-                        label: 'Factures',
+                        label: 'Ventes',
                         icon: Icons.receipt_long_rounded,
                         selected: currentIndex == 2,
                         onTap: () => onChanged(2),

@@ -94,6 +94,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (context) => const XPrinterConfigSheet(),
     );
   }
@@ -141,17 +142,10 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
             await _resolveProduct(raw, auth.companyId, auth.secretKey);
         if (product == null) {
           await _feedback.scanWarning();
-          await _controller.stop();
-          final created = await _showCreateProductSheet(raw, auth.companyId);
-          await _controller.start();
-          if (created == null) {
-            _setMessage(
-              'Code detecte: $raw. Produit non enregistre.',
-              isError: true,
-            );
-            continue;
-          }
-          await _addProduct(created);
+          _setMessage(
+            'Produit introuvable pour ce code. Enregistrez-le d abord depuis Produits > Nouveau produit.',
+            isError: true,
+          );
           continue;
         }
 
@@ -213,19 +207,6 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     ref.read(cartProvider.notifier).addProduct(product);
     await _feedback.scanSuccess();
     _setMessage('${product.name} ajoute au panier');
-  }
-
-  Future<Product?> _showCreateProductSheet(
-      String code, String companyId) async {
-    return showModalBottomSheet<Product?>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => _CreateScannedProductSheet(
-        code: code,
-        companyId: companyId,
-      ),
-    );
   }
 
   void _setMessage(String message, {bool isError = false}) {
@@ -450,137 +431,6 @@ class _ScanStatusPill extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _CreateScannedProductSheet extends ConsumerStatefulWidget {
-  const _CreateScannedProductSheet({
-    required this.code,
-    required this.companyId,
-  });
-
-  final String code;
-  final String companyId;
-
-  @override
-  ConsumerState<_CreateScannedProductSheet> createState() =>
-      _CreateScannedProductSheetState();
-}
-
-class _CreateScannedProductSheetState
-    extends ConsumerState<_CreateScannedProductSheet> {
-  final _name = TextEditingController();
-  final _price = TextEditingController(text: '0');
-  final _stock = TextEditingController(text: '1');
-  bool _saving = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _price.dispose();
-    _stock.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final name = _name.text.trim();
-    final price = double.tryParse(_price.text.replaceAll(',', '.')) ?? -1;
-    final stock = int.tryParse(_stock.text) ?? -1;
-    if (name.isEmpty || price < 0 || stock < 0) {
-      setState(() => _error = 'Nom, prix et stock requis.');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final product = await ref.read(productsRepositoryProvider).upsert(
-            Product(
-              id: '',
-              companyId: widget.companyId,
-              name: name,
-              price: price,
-              stock: stock,
-              sku: widget.code,
-              consumerCode: widget.code,
-              description: 'Cree depuis le scan du code ${widget.code}',
-            ),
-          );
-      ref.invalidate(productsListProvider);
-      if (!mounted) return;
-      Navigator.of(context).pop(product);
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Produit introuvable',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Code detecte: ${widget.code}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(labelText: 'Nom du produit'),
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _price,
-            decoration: const InputDecoration(labelText: 'Prix'),
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _stock,
-            decoration: const InputDecoration(labelText: 'Stock initial'),
-            keyboardType: TextInputType.number,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          const SizedBox(height: 18),
-          FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add_box_rounded),
-            label: const Text('Enregistrer et ajouter au panier'),
-          ),
-        ],
       ),
     );
   }
