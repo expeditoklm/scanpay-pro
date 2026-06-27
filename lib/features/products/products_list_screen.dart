@@ -19,8 +19,17 @@ class ProductsListScreen extends ConsumerStatefulWidget {
 
 class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   String _query = '';
+  final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _scrollCtrl = ScrollController();
   final Set<String> _selectedProductIds = <String>{};
   bool _isSharing = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,19 +114,21 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         final filtered = _filterProducts(products);
         final selectionCount = _selectedProductIds.length;
 
-        return RefreshIndicator(
+        return Stack(
+          children: [
+            RefreshIndicator(
           onRefresh: () async => ref.invalidate(productsListProvider),
           child: ListView(
+            controller: _scrollCtrl,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
             children: [
               _ProductsHero(
                 pendingCount: pendingCount,
                 query: _query,
+                searchCtrl: _searchCtrl,
                 selectionCount: selectionCount,
                 isSharing: _isSharing,
                 onQueryChanged: (value) => setState(() => _query = value),
-                onCreate: () => _openForm(context),
-                onImport: () => _openImport(context),
                 onShareSelection: selectionCount == 0
                     ? null
                     : () => _shareSelectedProducts(products),
@@ -131,24 +142,73 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                 )
               else if (filtered.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 18),
-                  child: Text(
-                    'Aucun produit trouve pour "$_query".',
-                    style: theme.textTheme.bodyMedium,
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(28),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: const Color(0xFFD7E2F2)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0E0F172A),
+                            blurRadius: 18,
+                            offset: Offset(0, 7),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Icon(
+                              Icons.search_off_rounded,
+                              size: 30,
+                              color: Color(0xFF94A3B8),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Aucun résultat',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Aucun produit trouvé pour\n"$_query"',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF64748B),
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 )
               else ...[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    selectionCount == 0
-                        ? 'Appui long sur un produit pour lancer la selection.'
-                        : 'Touchez pour cocher ou decocher les produits a partager.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF64748B),
+                if (selectionCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      'Touchez pour cocher ou decocher les produits a partager.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF64748B),
+                      ),
                     ),
                   ),
-                ),
                 ...filtered.map(
                   (product) => Padding(
                     padding: const EdgeInsets.only(bottom: 14),
@@ -164,6 +224,40 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               ],
             ],
           ),
+        ),
+            // ── FAB flottant (toujours visible) ───────────────────────
+            Positioned(
+              bottom: 130,
+              right: 20,
+              child: GestureDetector(
+                onTap: () => _openForm(context),
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x661565D8),
+                        blurRadius: 16,
+                        offset: Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.add_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -259,22 +353,20 @@ class _ProductsHero extends StatelessWidget {
   const _ProductsHero({
     required this.pendingCount,
     required this.query,
+    required this.searchCtrl,
     required this.selectionCount,
     required this.isSharing,
     required this.onQueryChanged,
-    required this.onCreate,
-    required this.onImport,
     required this.onShareSelection,
     required this.onClearSelection,
   });
 
   final int pendingCount;
   final String query;
+  final TextEditingController searchCtrl;
   final int selectionCount;
   final bool isSharing;
   final ValueChanged<String> onQueryChanged;
-  final VoidCallback onCreate;
-  final VoidCallback onImport;
   final VoidCallback? onShareSelection;
   final VoidCallback? onClearSelection;
 
@@ -396,12 +488,24 @@ class _ProductsHero extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           TextField(
+            controller: searchCtrl,
             onChanged: onQueryChanged,
             style: const TextStyle(color: Color(0xFF0F172A)),
             decoration: InputDecoration(
               prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: query.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      color: const Color(0xFF94A3B8),
+                      tooltip: 'Effacer',
+                      onPressed: () {
+                        searchCtrl.clear();
+                        onQueryChanged('');
+                      },
+                    )
+                  : null,
               hintText: 'Rechercher un produit, un SKU ou une description',
               filled: true,
               fillColor: Colors.white,
@@ -419,33 +523,12 @@ class _ProductsHero extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              FilledButton.icon(
-                onPressed: onCreate,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF0F172A),
-                ),
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Nouveau produit'),
-              ),
-              OutlinedButton.icon(
-                onPressed: onImport,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.32),
-                  ),
-                  backgroundColor: Colors.white.withValues(alpha: 0.06),
-                ),
-                icon: const Icon(Icons.upload_file_rounded),
-                label: const Text('Importer'),
-              ),
-              if (selectionCount > 0)
+          if (selectionCount > 0) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
                 FilledButton.icon(
                   onPressed: isSharing ? null : onShareSelection,
                   style: FilledButton.styleFrom(
@@ -464,7 +547,6 @@ class _ProductsHero extends StatelessWidget {
                       : const Icon(Icons.share_rounded),
                   label: const Text('Partager WhatsApp'),
                 ),
-              if (selectionCount > 0)
                 OutlinedButton.icon(
                   onPressed: isSharing ? null : onClearSelection,
                   style: OutlinedButton.styleFrom(
@@ -475,10 +557,11 @@ class _ProductsHero extends StatelessWidget {
                     backgroundColor: Colors.white.withValues(alpha: 0.06),
                   ),
                   icon: const Icon(Icons.close_rounded),
-                  label: const Text('Annuler selection'),
+                  label: const Text('Annuler'),
                 ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -503,11 +586,13 @@ class _ProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final subtitleParts = <String>[
-      formatPriceEuro(product.price),
-      'Stock ${product.stock}',
-      if ((product.sku ?? '').trim().isNotEmpty) 'SKU ${product.sku!.trim()}',
-    ];
+    final rawDesc = (product.description ?? '').trim();
+    // Toujours 10 chars max — si vide on met un espace insécable pour garder la hauteur
+    final shortDesc = rawDesc.isEmpty
+        ? ' '
+        : rawDesc.length > 10
+            ? '${rawDesc.substring(0, 10)}…'
+            : rawDesc;
 
     return Material(
       color: Colors.transparent,
@@ -534,6 +619,7 @@ class _ProductCard extends StatelessWidget {
           ),
           child: Row(
             children: [
+              // ── Image 58×58 ─────────────────────────────────────────
               Container(
                 width: 58,
                 height: 58,
@@ -541,7 +627,6 @@ class _ProductCard extends StatelessWidget {
                   color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(18),
                 ),
-                alignment: Alignment.center,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: SizedBox.expand(
@@ -573,15 +658,21 @@ class _ProductCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
+
+              // ── Texte : 3 lignes fixes → hauteur uniforme ────────────
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Ligne 1 : nom (1 ligne max)
                     Row(
                       children: [
                         Expanded(
                           child: Text(
                             product.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w800,
                             ),
@@ -590,9 +681,7 @@ class _ProductCard extends StatelessWidget {
                         if (product.pendingSync)
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
+                                horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFF4E5),
                               borderRadius: BorderRadius.circular(999),
@@ -600,7 +689,7 @@ class _ProductCard extends StatelessWidget {
                             child: const Text(
                               'Offline',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFFB45309),
                               ),
@@ -608,26 +697,31 @@ class _ProductCard extends StatelessWidget {
                           ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 5),
+                    // Ligne 2 : prix
                     Text(
-                      subtitleParts.join(' | '),
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    if ((product.description ?? '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        product.description!.trim(),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF475569),
-                        ),
+                      formatPriceEuro(product.price),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1565D8),
                       ),
-                    ],
+                    ),
+                    const SizedBox(height: 4),
+                    // Ligne 3 : description tronquée (toujours présente)
+                    Text(
+                      shortDesc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(width: 10),
+
+              // ── Icône droite ─────────────────────────────────────────
               Icon(
                 selectionMode
                     ? (isSelected
@@ -635,7 +729,9 @@ class _ProductCard extends StatelessWidget {
                         : Icons.radio_button_unchecked_rounded)
                     : Icons.chevron_right_rounded,
                 color: selectionMode
-                    ? (isSelected ? const Color(0xFF25D366) : const Color(0xFF94A3B8))
+                    ? (isSelected
+                        ? const Color(0xFF25D366)
+                        : const Color(0xFF94A3B8))
                     : null,
               ),
             ],

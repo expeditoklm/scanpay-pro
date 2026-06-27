@@ -59,43 +59,72 @@ class ProductDetailScreen extends ConsumerWidget {
             if ((product.referenceImagePath ?? '').isNotEmpty ||
                 (product.referenceImageUrl ?? '').isNotEmpty) ...[
               const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: AspectRatio(
-                  aspectRatio: 4 / 3,
-                  child: buildProductImage(
-                    product: product,
-                    fit: BoxFit.cover,
-                    fallback: Container(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: const Center(
-                        child: Icon(Icons.image_not_supported_outlined, size: 42),
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: AspectRatio(
+                      aspectRatio: 4 / 3,
+                      child: buildProductImage(
+                        product: product,
+                        fit: BoxFit.cover,
+                        fallback: Container(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          child: const Center(
+                            child: Icon(Icons.image_not_supported_outlined, size: 42),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final updated = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
-                      builder: (_) => ProductImageEditScreen(product: product),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: GestureDetector(
+                      onTap: () async {
+                        final updated = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => ProductImageEditScreen(product: product),
+                          ),
+                        );
+                        if (updated == true && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Image produit mise a jour')),
+                          );
+                        }
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x441565D8),
+                              blurRadius: 10,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.edit_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
                     ),
-                  );
-                  if (updated == true && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Image produit mise a jour')),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.image_outlined),
-                label: const Text('Modifier l image du produit'),
+                  ),
+                ],
               ),
             ] else ...[
               const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () async {
+              GestureDetector(
+                onTap: () async {
                   final updated = await Navigator.of(context).push<bool>(
                     MaterialPageRoute(
                       builder: (_) => ProductImageEditScreen(product: product),
@@ -107,8 +136,38 @@ class ProductDetailScreen extends ConsumerWidget {
                     );
                   }
                 },
-                icon: const Icon(Icons.add_a_photo_outlined),
-                label: const Text('Ajouter une image produit'),
+                child: Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFD7E2F2),
+                      style: BorderStyle.solid,
+                    ),
+                  ),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.add_a_photo_outlined,
+                          size: 30,
+                          color: Color(0xFF94A3B8),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Ajouter une image',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ],
             const SizedBox(height: 24),
@@ -119,22 +178,49 @@ class ProductDetailScreen extends ConsumerWidget {
             const SizedBox(height: 8),
             Center(
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFD7E2F2)),
+                  boxShadow: const [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 8,
+                      color: Color(0x120F172A),
+                      blurRadius: 24,
+                      offset: Offset(0, 10),
                     ),
                   ],
                 ),
-                child: QrImageView(
-                  data: previewQrData,
-                  version: QrVersions.auto,
-                  size: 220,
-                  backgroundColor: Colors.white,
+                child: Column(
+                  children: [
+                    QrImageView(
+                      data: previewQrData,
+                      version: QrVersions.auto,
+                      size: 220,
+                      backgroundColor: Colors.white,
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                        ),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Text(
+                        'QuickSellPay — QR Authentique',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -199,32 +285,11 @@ class ProductDetailScreen extends ConsumerWidget {
 
   Future<int?> _askQuantity(BuildContext context) async {
     final controller = TextEditingController(text: '12');
-    return showDialog<int>(
+    return showModalBottomSheet<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nombre de QR'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Quantite a generer',
-            hintText: 'Ex: 12',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final quantity = int.tryParse(controller.text.trim());
-              Navigator.of(ctx).pop(quantity);
-            },
-            child: const Text('Generer'),
-          ),
-        ],
-      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _QrQuantitySheet(controller: controller),
     );
   }
 
@@ -274,5 +339,219 @@ class ProductDetailScreen extends ConsumerWidget {
         ),
       );
     }).toList();
+  }
+}
+
+// ─── Bottom sheet : saisie quantité QR ───────────────────────────────────────
+class _QrQuantitySheet extends StatelessWidget {
+  const _QrQuantitySheet({required this.controller});
+  final TextEditingController controller;
+
+  static const _kBlue1 = Color(0xFF1565D8);
+  static const _kBlue2 = Color(0xFF0D47A1);
+  static const _kTeal  = Color(0xFF22C1C3);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        child: ColoredBox(
+          color: Colors.white,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+
+              // ── Header dégradé ──────────────────────────────────────
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [_kBlue2, _kBlue1, _kTeal],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                child: Column(
+                  children: [
+                    // Pill
+                    Center(
+                      child: Container(
+                        width: 38,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(Icons.qr_code_2_rounded,
+                              color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 14),
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Generer des QR codes',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              'Choisissez la quantite a imprimer',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Corps ───────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Champ quantité
+                    TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      autofocus: true,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: 2,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Quantite',
+                        labelStyle: const TextStyle(
+                            color: Color(0xFF64748B), fontSize: 13),
+                        filled: true,
+                        fillColor: const Color(0xFFE8F0FE),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(
+                              color: _kBlue1.withOpacity(0.2)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(
+                              color: _kBlue1, width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 18),
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Chaque QR code est unique et signe cryptographiquement.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 11.5, color: Color(0xFF94A3B8)),
+                    ),
+                    const SizedBox(height: 22),
+
+                    // Boutons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF64748B),
+                              side: const BorderSide(
+                                  color: Color(0xFFCBD5E1)),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text('Annuler',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: GestureDetector(
+                            onTap: () {
+                              final qty = int.tryParse(
+                                  controller.text.trim());
+                              Navigator.of(context).pop(qty);
+                            },
+                            child: Container(
+                              height: 50,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [_kBlue2, _kBlue1, _kTeal],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _kBlue1.withOpacity(0.30),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              alignment: Alignment.center,
+                              child: const Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.qr_code_rounded,
+                                      color: Colors.white, size: 18),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Generer',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -13,6 +13,7 @@ import '../../data/offline_storage.dart';
 import '../../data/product_extras_repository.dart';
 import '../../data/repository_providers.dart';
 import '../auth/auth_provider.dart';
+import 'import_products_screen.dart';
 
 class ProductFormScreen extends ConsumerStatefulWidget {
   const ProductFormScreen({super.key});
@@ -264,260 +265,461 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Nouveau produit')),
+      backgroundColor: const Color(0xFFF0F4FA),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _FormSection(
-                  title: 'Informations produit',
-                  subtitle:
-                      'Renseignez le nom, le prix et le stock initial du produit.',
+        child: Column(
+          children: [
+            // ── Hero header ──────────────────────────────────────────────
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF0F172A), Color(0xFF1565D8), Color(0xFF22C1C3)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.add_box_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Nouveau produit',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          'Remplissez les infos ci-dessous',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // ── Bouton Importer CSV ──────────────────────────────
+                  GestureDetector(
+                    onTap: () async {
+                      await Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => const ImportProductsScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.30),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.upload_file_rounded,
+                              color: Colors.white, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'Importer',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Form body ────────────────────────────────────────────────
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                child: Form(
+                  key: _formKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      TextFormField(
+                      // ── Section infos ──────────────────────────────────
+                      _sectionLabel('Informations produit', Icons.inventory_2_rounded),
+                      const SizedBox(height: 12),
+                      _field(
                         controller: _nameCtrl,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Nom du produit',
-                          hintText: 'Ex: Savon premium',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) =>
-                            (value == null || value.trim().isEmpty)
-                                ? 'Requis'
-                                : null,
+                        label: 'Nom du produit',
+                        hint: 'Ex : Savon premium',
+                        icon: Icons.label_rounded,
+                        action: TextInputAction.next,
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Requis' : null,
                       ),
                       const SizedBox(height: 12),
+                      // Code-barres + scan button
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: TextFormField(
+                            child: _field(
                               controller: _codeCtrl,
-                              textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
-                                labelText: 'Code-barres',
-                                hintText: 'Scannez ou saisissez le code',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.qr_code_rounded),
+                              label: 'Code-barres',
+                              hint: 'Scannez ou saisissez',
+                              icon: Icons.qr_code_rounded,
+                              action: TextInputAction.next,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          GestureDetector(
+                            onTap: _scanProductCode,
+                            child: Container(
+                              width: 54,
+                              height: 54,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x441565D8),
+                                    blurRadius: 10,
+                                    offset: Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.document_scanner_rounded,
+                                color: Colors.white,
+                                size: 22,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          IconButton.filledTonal(
-                            tooltip: 'Scanner code-barres',
-                            onPressed: _scanProductCode,
-                            icon: const Icon(Icons.document_scanner_rounded),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _priceCtrl,
-                        textInputAction: TextInputAction.next,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Prix (FCFA)',
-                          hintText: 'Ex: 2500',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Requis';
-                          }
-                          final price =
-                              double.tryParse(value.replaceAll(',', '.'));
-                          if (price == null || price < 0) {
-                            return 'Prix invalide';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _stockCtrl,
-                        textInputAction: TextInputAction.done,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Stock initial',
-                          hintText: 'Ex: 10',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Requis';
-                          }
-                          final stock = int.tryParse(value.trim());
-                          if (stock == null || stock < 0) {
-                            return 'Stock invalide';
-                          }
-                          return null;
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _FormSection(
-                  title: 'Image de reference',
-                  subtitle:
-                      'Optionnel. Cette image aide la verification anti-fraude au scan.',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                      Row(
                         children: [
-                          OutlinedButton.icon(
-                            onPressed: _pickImage,
-                            icon: const Icon(Icons.photo_library),
-                            label: const Text('Galerie'),
+                          Expanded(
+                            child: _field(
+                              controller: _priceCtrl,
+                              label: 'Prix (FCFA)',
+                              hint: 'Ex : 2500',
+                              icon: Icons.payments_rounded,
+                              action: TextInputAction.next,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Requis';
+                                final p = double.tryParse(v.replaceAll(',', '.'));
+                                if (p == null || p < 0) return 'Invalide';
+                                return null;
+                              },
+                            ),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: _takePhoto,
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text('Photo'),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _field(
+                              controller: _stockCtrl,
+                              label: 'Stock initial',
+                              hint: 'Ex : 10',
+                              icon: Icons.warehouse_rounded,
+                              action: TextInputAction.done,
+                              keyboardType: TextInputType.number,
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Requis';
+                                final s = int.tryParse(v.trim());
+                                if (s == null || s < 0) return 'Invalide';
+                                return null;
+                              },
+                            ),
                           ),
                         ],
                       ),
-                      if (_imagePath != null) ...[
-                        const SizedBox(height: 12),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: AspectRatio(
-                            aspectRatio: 4 / 3,
-                            child: Image.file(
-                              File(_imagePath!),
-                              fit: BoxFit.cover,
+                      const SizedBox(height: 24),
+                      // ── Section image ──────────────────────────────────
+                      _sectionLabel('Image de référence', Icons.image_rounded),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Optionnel — aide la vérification anti-fraude au scan.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_imagePath != null)
+                        Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: AspectRatio(
+                                aspectRatio: 4 / 3,
+                                child: Image.file(
+                                  File(_imagePath!),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                             ),
+                            Positioned(
+                              top: 10,
+                              right: 10,
+                              child: Row(
+                                children: [
+                                  _imageOverlayBtn(
+                                    Icons.photo_library_rounded,
+                                    _pickImage,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _imageOverlayBtn(
+                                    Icons.camera_alt_rounded,
+                                    _takePhoto,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _imagePickerTile(
+                                icon: Icons.photo_library_rounded,
+                                label: 'Galerie',
+                                color: const Color(0xFF1565D8),
+                                onTap: _pickImage,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _imagePickerTile(
+                                icon: Icons.camera_alt_rounded,
+                                label: 'Appareil photo',
+                                color: const Color(0xFF22C1C3),
+                                onTap: _takePhoto,
+                              ),
+                            ),
+                          ],
+                        ),
+                      // ── Error ──────────────────────────────────────────
+                      if (_error != null) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1F2),
+                            border: Border.all(color: const Color(0xFFFDA4AF)),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                color: Color(0xFFE11D48),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: const TextStyle(
+                                    color: Color(0xFFBE123C),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
+                      const SizedBox(height: 28),
+                      GradientButton(
+                        onPressed: _saving ? null : _save,
+                        child: _saving
+                            ? const SizedBox(
+                                height: 22,
+                                width: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Enregistrer le produit',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer.withOpacity(0.4),
-                      border: Border.all(
-                        color: theme.colorScheme.error.withOpacity(0.5),
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: theme.colorScheme.error,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: TextStyle(
-                              color: theme.colorScheme.error,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                GradientButton(
-                  onPressed: _saving ? null : _save,
-                  child: _saving
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Enregistrer',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
-}
 
-class _FormSection extends StatelessWidget {
-  const _FormSection({
-    required this.title,
-    required this.subtitle,
-    required this.child,
-  });
-
-  final String title;
-  final String subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFD7E2F2)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x120F172A),
-            blurRadius: 24,
-            offset: Offset(0, 10),
+  Widget _sectionLabel(String label, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 17, color: const Color(0xFF1565D8)),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required TextInputAction action,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      textInputAction: action,
+      keyboardType: keyboardType,
+      validator: validator,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: Color(0xFF0F172A),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(icon, size: 18, color: const Color(0xFF94A3B8)),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD7E2F2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF1565D8), width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFE11D48)),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFE11D48), width: 1.5),
+        ),
+      ),
+    );
+  }
+
+  Widget _imagePickerTile({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFD7E2F2)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F172A),
+              blurRadius: 10,
+              offset: Offset(0, 4),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 22),
             ),
-          ),
-          const SizedBox(height: 16),
-          child,
-        ],
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _imageOverlayBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 17),
       ),
     );
   }

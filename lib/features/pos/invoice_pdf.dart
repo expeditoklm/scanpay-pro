@@ -10,12 +10,14 @@ final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
 
 Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat _) async {
   final doc = pw.Document();
-  final receiptHeight = (165 + (invoice.lines.length * 18)).toDouble() *
-      PdfPageFormat.mm;
+
+  final lineCount = invoice.lines.length;
+  // Hauteur calculée au plus juste : base compacte + 10mm par ligne
+  final receiptHeight = (78.0 + lineCount * 10.0) * PdfPageFormat.mm;
   final receiptFormat = PdfPageFormat(
-    58 * PdfPageFormat.mm,
+    72 * PdfPageFormat.mm,
     receiptHeight,
-    marginAll: 4 * PdfPageFormat.mm,
+    marginAll: 5 * PdfPageFormat.mm,
   );
 
   doc.addPage(
@@ -24,171 +26,189 @@ Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat _) async {
       build: (_) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
+
+          // ── En-tete ───────────────────────────────────────────────────
           pw.Center(
             child: pw.Text(
               invoice.companyName.toUpperCase(),
               textAlign: pw.TextAlign.center,
               style: pw.TextStyle(
-                fontSize: 10,
+                fontSize: 13,
                 fontWeight: pw.FontWeight.bold,
-                letterSpacing: 0.3,
+                letterSpacing: 1.5,
               ),
             ),
           ),
-          pw.SizedBox(height: 2),
+          pw.SizedBox(height: 1),
           pw.Center(
             child: pw.Text(
-              'QuickSellPay Receipt',
+              'QuickSellPay - Recu de vente',
               style: const pw.TextStyle(fontSize: 6.5),
+              textAlign: pw.TextAlign.center,
             ),
           ),
-          pw.SizedBox(height: 6),
-          pw.Text(
-            'REF: ${invoice.reference}',
-            style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.Text(
-            'DATE: ${_dateFmt.format(invoice.createdAt)}',
-            style: const pw.TextStyle(fontSize: 6.8),
-          ),
-          pw.Text(
-            'BOUTIQUE: ${invoice.companyId}',
-            style: const pw.TextStyle(fontSize: 6.8),
-          ),
-          if (invoice.pendingSync)
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(top: 4),
-              child: pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 3,
-                ),
-                decoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('#FFF1DC'),
-                  borderRadius: pw.BorderRadius.circular(20),
-                ),
-                child: pw.Text(
-                  'SYNC EN ATTENTE',
+          pw.SizedBox(height: 4),
+          pw.Divider(thickness: 1.2),
+
+          // ── Infos transaction ─────────────────────────────────────────
+          pw.SizedBox(height: 3),
+          _row2('Ref :', invoice.reference, bold: true, fontSize: 7),
+          pw.SizedBox(height: 2),
+          _row2('Date :', _dateFmt.format(invoice.createdAt), fontSize: 6.5),
+          pw.SizedBox(height: 2),
+          _row2('Boutique :', invoice.companyId, fontSize: 6.5),
+          if ((invoice.customer ?? '').trim().isNotEmpty) ...[
+            pw.SizedBox(height: 2),
+            _row2('Client :', invoice.customer!.trim(), fontSize: 6.5),
+          ],
+          pw.SizedBox(height: 4),
+          pw.Divider(thickness: 0.5),
+
+          // ── En-tete tableau ───────────────────────────────────────────
+          pw.SizedBox(height: 2),
+          pw.Row(
+            children: [
+              pw.SizedBox(
+                width: 20,
+                child: pw.Text('Qte',
+                    style: pw.TextStyle(
+                        fontSize: 6.5, fontWeight: pw.FontWeight.bold)),
+              ),
+              pw.Expanded(
+                child: pw.Text('Article',
+                    style: pw.TextStyle(
+                        fontSize: 6.5, fontWeight: pw.FontWeight.bold)),
+              ),
+              pw.Text('Montant',
                   style: pw.TextStyle(
-                    fontSize: 6.5,
-                    color: PdfColor.fromHex('#B45309'),
-                    fontWeight: pw.FontWeight.bold,
+                      fontSize: 6.5, fontWeight: pw.FontWeight.bold)),
+            ],
+          ),
+          pw.SizedBox(height: 2),
+          pw.Divider(thickness: 0.4),
+
+          // ── Lignes produits ───────────────────────────────────────────
+          for (final line in invoice.lines) ...[
+            pw.SizedBox(height: 3),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                pw.SizedBox(
+                  width: 20,
+                  child: pw.Text('${line.quantity}x',
+                      style: const pw.TextStyle(fontSize: 7)),
+                ),
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(line.name,
+                          style: pw.TextStyle(
+                              fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                      pw.Text('${line.unitPrice.toStringAsFixed(0)} FCFA/u',
+                          style: const pw.TextStyle(fontSize: 5.8)),
+                    ],
                   ),
                 ),
-              ),
+                pw.Text('${line.lineTotal.toStringAsFixed(0)} F',
+                    style: pw.TextStyle(
+                        fontSize: 7, fontWeight: pw.FontWeight.bold)),
+              ],
             ),
-          pw.SizedBox(height: 6),
-          pw.Divider(color: PdfColor.fromHex('#D9D9D9')),
+            pw.SizedBox(height: 3),
+            pw.Divider(
+                thickness: 0.3, color: PdfColor.fromHex('#CCCCCC')),
+          ],
+
+          // ── Sous-total ────────────────────────────────────────────────
+          pw.SizedBox(height: 3),
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Text('QTY', style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold)),
-              pw.Expanded(
-                child: pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 6),
-                  child: pw.Text(
-                    'DESC',
-                    style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold),
-                  ),
-                ),
-              ),
-              pw.Text('AMT', style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold)),
+              pw.Text('Sous-total',
+                  style: const pw.TextStyle(fontSize: 6.5)),
+              pw.Text('${invoice.total.toStringAsFixed(0)} FCFA',
+                  style: const pw.TextStyle(fontSize: 6.5)),
             ],
           ),
           pw.SizedBox(height: 4),
-          for (final line in invoice.lines)
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(bottom: 4),
-              child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.SizedBox(
-                    width: 18,
-                    child: pw.Text(
-                      '${line.quantity}',
-                      style: const pw.TextStyle(fontSize: 6.8),
-                    ),
-                  ),
-                  pw.Expanded(
-                    child: pw.Padding(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 4),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            line.name.toUpperCase(),
-                            style: pw.TextStyle(
-                              fontSize: 6.8,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.Text(
-                            '${line.unitPrice.toStringAsFixed(0)} FCFA',
-                            style: const pw.TextStyle(fontSize: 6.1),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  pw.Text(
-                    '${line.lineTotal.toStringAsFixed(0)}',
-                    style: const pw.TextStyle(fontSize: 6.8),
-                  ),
-                ],
-              ),
-            ),
-          pw.Divider(color: PdfColor.fromHex('#D9D9D9')),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text('SUBTOTAL', style: const pw.TextStyle(fontSize: 6.8)),
-              pw.Text('${invoice.total.toStringAsFixed(0)}', style: const pw.TextStyle(fontSize: 6.8)),
-            ],
-          ),
+          pw.Divider(thickness: 1.2),
+
+          // ── Total ─────────────────────────────────────────────────────
           pw.SizedBox(height: 2),
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Text(
-                'AMOUNT',
-                style: pw.TextStyle(fontSize: 8.6, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                '${invoice.total.toStringAsFixed(0)} FCFA',
-                style: pw.TextStyle(fontSize: 8.6, fontWeight: pw.FontWeight.bold),
-              ),
+              pw.Text('TOTAL',
+                  style: pw.TextStyle(
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold,
+                      letterSpacing: 0.5)),
+              pw.Text('${invoice.total.toStringAsFixed(0)} FCFA',
+                  style: pw.TextStyle(
+                      fontSize: 11, fontWeight: pw.FontWeight.bold)),
             ],
           ),
-          if ((invoice.customer ?? '').trim().isNotEmpty) ...[
-            pw.SizedBox(height: 6),
-            pw.Text('CLIENT: ${invoice.customer!.trim()}', style: const pw.TextStyle(fontSize: 6.6)),
-          ],
+          pw.SizedBox(height: 2),
+          pw.Divider(thickness: 1.2),
+
+          // ── Note / Sync ───────────────────────────────────────────────
           if ((invoice.note ?? '').trim().isNotEmpty) ...[
-            pw.SizedBox(height: 4),
-            pw.Text('NOTE: ${invoice.note!.trim()}', style: const pw.TextStyle(fontSize: 6.4)),
-          ],
-          pw.SizedBox(height: 8),
-          pw.Center(
-            child: pw.Text(
-              '*** THANK YOU ***',
-              style: pw.TextStyle(fontSize: 6.6, fontWeight: pw.FontWeight.bold),
+            pw.SizedBox(height: 3),
+            pw.Center(
+              child: pw.Text(_ascii(invoice.note!.trim()),
+                  style: const pw.TextStyle(fontSize: 6),
+                  textAlign: pw.TextAlign.center),
             ),
+          ],
+          if (invoice.pendingSync) ...[
+            pw.SizedBox(height: 3),
+            pw.Center(
+              child: pw.Text('[ SYNC EN ATTENTE ]',
+                  style: pw.TextStyle(
+                      fontSize: 6.5, fontWeight: pw.FontWeight.bold)),
+            ),
+          ],
+
+          // ── Message ───────────────────────────────────────────────────
+          pw.SizedBox(height: 5),
+          pw.Center(
+            child: pw.Text('Merci pour votre achat !',
+                style: pw.TextStyle(
+                    fontSize: 7.5, fontWeight: pw.FontWeight.bold),
+                textAlign: pw.TextAlign.center),
+          ),
+          pw.SizedBox(height: 1),
+          pw.Center(
+            child: pw.Text("Conservez ce recu comme preuve d'achat.",
+                style: const pw.TextStyle(fontSize: 6),
+                textAlign: pw.TextAlign.center),
           ),
           pw.SizedBox(height: 6),
-          pw.Container(
-            height: 18,
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColor.fromHex('#111827'), width: 0.8),
-            ),
-            child: pw.Row(
-              children: List.generate(
-                24,
-                (index) => pw.Container(
-                  width: index.isEven ? 3 : 1.5,
-                  color: index.isEven ? PdfColors.black : PdfColors.white,
-                ),
-              ),
-            ),
+
+          // ── Code-barres Code128 ───────────────────────────────────────
+          pw.BarcodeWidget(
+            data: invoice.reference.isNotEmpty
+                ? invoice.reference
+                : invoice.id,
+            barcode: pw.Barcode.code128(),
+            height: 26,
+            width: double.infinity,
+            drawText: true,
+            textPadding: 2,
+            textStyle:
+                const pw.TextStyle(fontSize: 5.5, letterSpacing: 0.8),
+            color: PdfColors.black,
+          ),
+          pw.SizedBox(height: 4),
+          pw.Divider(thickness: 0.3),
+          pw.SizedBox(height: 2),
+
+          // ── Pied de page ──────────────────────────────────────────────
+          pw.Center(
+            child: pw.Text('QuickSellPay - vente securisee et tracable',
+                style: const pw.TextStyle(fontSize: 5.5),
+                textAlign: pw.TextAlign.center),
           ),
         ],
       ),
@@ -197,3 +217,50 @@ Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat _) async {
 
   return doc.save();
 }
+
+// Remplace les caracteres speciaux par des equivalents ASCII
+String _ascii(String s) => s
+    .replaceAll('‘', "'")
+    .replaceAll('’', "'")
+    .replaceAll('“', '"')
+    .replaceAll('”', '"')
+    .replaceAll('–', '-')
+    .replaceAll('—', '-')
+    .replaceAll('·', '.')
+    .replaceAll('é', 'e')
+    .replaceAll('è', 'e')
+    .replaceAll('ê', 'e')
+    .replaceAll('à', 'a')
+    .replaceAll('â', 'a')
+    .replaceAll('ô', 'o')
+    .replaceAll('û', 'u')
+    .replaceAll('ü', 'u')
+    .replaceAll('î', 'i')
+    .replaceAll('ç', 'c')
+    .replaceAll('É', 'E')
+    .replaceAll('À', 'A')
+    .replaceAll('&', 'et');
+
+pw.Widget _row2(
+  String label,
+  String value, {
+  bool bold = false,
+  double fontSize = 6.5,
+}) =>
+    pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(label, style: const pw.TextStyle(fontSize: 6.5)),
+        pw.SizedBox(width: 4),
+        pw.Expanded(
+          child: pw.Text(
+            _ascii(value),
+            style: pw.TextStyle(
+              fontSize: fontSize,
+              fontWeight: bold ? pw.FontWeight.bold : null,
+            ),
+            textAlign: pw.TextAlign.right,
+          ),
+        ),
+      ],
+    );

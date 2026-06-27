@@ -51,6 +51,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
   final Map<String, DateTime> _recentScans = {};
 
   bool _busy = false;
+  bool _inModal = false;   // bloque les scans pendant un bottom sheet
   bool _printingReceipt = false;
   String? _message;
   bool _messageIsError = false;
@@ -93,8 +94,9 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
+      showDragHandle: false,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => const XPrinterConfigSheet(),
     );
   }
@@ -113,7 +115,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
   }
 
   Future<void> _onBarcode(BarcodeCapture capture) async {
-    if (_busy) return;
+    if (_busy || _inModal) return;
     final codes = capture.barcodes
         .map((barcode) => barcode.rawValue?.trim())
         .whereType<String>()
@@ -189,14 +191,27 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     final hasReferenceImage = (product.referenceImagePath ?? '').isNotEmpty ||
         (product.referenceImageUrl ?? '').isNotEmpty;
     if (hasReferenceImage) {
-      await _controller.stop();
-      if (!mounted) return;
-      final ok = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        builder: (ctx) => AntiFraudSheet(product: product),
-      );
-      await _controller.start();
+      // On ne stoppe PAS la caméra : stop()/start() déclenche
+      // onCameraAccessPrioritiesChanged qui cause un RenderBox layout crash
+      // dans MobileScanner. On bloque juste le traitement des scans.
+      if (mounted) setState(() => _inModal = true);
+      bool? ok;
+      try {
+        if (!mounted) return;
+        ok = await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (ctx) => AntiFraudSheet(product: product),
+        ).timeout(
+          const Duration(seconds: 60),
+          onTimeout: () => null, // libère _busy si le sheet reste bloqué
+        );
+      } catch (_) {
+        ok = null;
+      } finally {
+        if (mounted) setState(() => _inModal = false);
+      }
       if (ok != true) {
         await _feedback.scanWarning();
         _setMessage('Ajout annule pour ${product.name}', isError: true);
@@ -288,99 +303,361 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     final count = cart.fold<int>(0, (sum, line) => sum + line.quantity);
     final total = cart.fold<double>(0, (sum, line) => sum + line.lineTotal);
 
-    return Column(
+    const scanSize = 260.0;
+    const cornerLen = 28.0;
+    const cornerWidth = 4.0;
+    const cornerRadius = 6.0;
+    const cornerColor = Color(0xFF22C1C3);
+
+    return Stack(
       children: [
-        SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
+        // ── Caméra plein écran ──────────────────────────────────────────
+        Positioned.fill(
+          child: MobileScanner(
+            controller: _controller,
+            onDetect: _onBarcode,
+          ),
+        ),
+
+        // ── Overlay sombre (4 zones autour du cadre) ────────────────────
+        Positioned.fill(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final totalH = constraints.maxHeight;
+              final totalW = constraints.maxWidth;
+              final top = (totalH - scanSize) / 2;
+              final left = (totalW - scanSize) / 2;
+
+              return Stack(
+                children: [
+                  // Haut
+                  Positioned(
+                    top: 0, left: 0, right: 0,
+                    height: top,
+                    child: _overlay(),
+                  ),
+                  // Bas
+                  Positioned(
+                    top: top + scanSize, left: 0, right: 0, bottom: 0,
+                    child: _overlay(),
+                  ),
+                  // Gauche
+                  Positioned(
+                    top: top, left: 0,
+                    width: left,
+                    height: scanSize,
+                    child: _overlay(),
+                  ),
+                  // Droite
+                  Positioned(
+                    top: top,
+                    left: left + scanSize,
+                    right: 0,
+                    height: scanSize,
+                    child: _overlay(),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+
+        // ── Coins du cadre de scan (centrés) ────────────────────────────
+        Center(
+          child: SizedBox(
+            width: scanSize,
+            height: scanSize,
+            child: Stack(
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Scan continu',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
-                      ),
-                      Text(
-                        '$count article(s) - ${formatPriceEuro(total)}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                      ),
-                    ],
+                // Coin haut-gauche
+                Positioned(
+                  top: 0, left: 0,
+                  child: _Corner(
+                    topLeft: true,
+                    len: cornerLen, width: cornerWidth,
+                    radius: cornerRadius, color: cornerColor,
                   ),
                 ),
-                IconButton.filledTonal(
-                  tooltip: 'Configuration device',
-                  onPressed: _openDeviceSettings,
-                  icon: const Icon(Icons.settings_input_component_rounded),
+                // Coin haut-droit
+                Positioned(
+                  top: 0, right: 0,
+                  child: _Corner(
+                    topRight: true,
+                    len: cornerLen, width: cornerWidth,
+                    radius: cornerRadius, color: cornerColor,
+                  ),
                 ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: 'Tirer le recu',
-                  onPressed:
-                      count == 0 || _printingReceipt ? null : _drawReceipt,
-                  icon: _printingReceipt
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.receipt_long_rounded),
+                // Coin bas-gauche
+                Positioned(
+                  bottom: 0, left: 0,
+                  child: _Corner(
+                    bottomLeft: true,
+                    len: cornerLen, width: cornerWidth,
+                    radius: cornerRadius, color: cornerColor,
+                  ),
                 ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  tooltip: 'Panier',
-                  onPressed: _openCart,
-                  icon: Badge.count(
-                    count: count,
-                    isLabelVisible: count > 0,
-                    child: const Icon(Icons.shopping_cart_rounded),
+                // Coin bas-droit
+                Positioned(
+                  bottom: 0, right: 0,
+                  child: _Corner(
+                    bottomRight: true,
+                    len: cornerLen, width: cornerWidth,
+                    radius: cornerRadius, color: cornerColor,
+                  ),
+                ),
+                // Label central
+                const Center(
+                  child: Text(
+                    'Pointez sur le QR code\nou le code-barres',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      height: 1.5,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
-        Expanded(
-          child: Stack(
-            children: [
-              MobileScanner(
-                controller: _controller,
-                onDetect: _onBarcode,
-              ),
-              Center(
-                child: Container(
-                  width: 260,
-                  height: 260,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white, width: 2.5),
-                    borderRadius: BorderRadius.circular(18),
+
+        // ── Header flottant ─────────────────────────────────────────────
+        Positioned(
+          top: 0, left: 0, right: 0,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+              child: Row(
+                children: [
+                  // Info panier
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.qr_code_scanner_rounded,
+                            color: Color(0xFF22C1C3),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Caisse — Scan continu',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                count == 0
+                                    ? 'Panier vide'
+                                    : '$count article${count > 1 ? 's' : ''} · ${formatPriceEuro(total)}',
+                                style: TextStyle(
+                                  color: count > 0
+                                      ? const Color(0xFF22C1C3)
+                                      : Colors.white60,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  // Bouton device
+                  _ActionBtn(
+                    icon: Icons.settings_input_component_rounded,
+                    onTap: _openDeviceSettings,
+                  ),
+                  const SizedBox(width: 8),
+                  // Bouton reçu
+                  _ActionBtn(
+                    icon: _printingReceipt
+                        ? Icons.hourglass_top_rounded
+                        : Icons.receipt_long_rounded,
+                    onTap: count == 0 || _printingReceipt ? null : _drawReceipt,
+                    enabled: count > 0 && !_printingReceipt,
+                  ),
+                  const SizedBox(width: 8),
+                  // Bouton panier
+                  _ActionBtn(
+                    icon: Icons.shopping_cart_rounded,
+                    onTap: _openCart,
+                    badge: count > 0 ? '$count' : null,
+                    accent: true,
+                  ),
+                ],
               ),
-              Positioned(
-                left: 20,
-                right: 20,
-                bottom: 20,
-                child: _ScanStatusPill(
-                  busy: _busy,
-                  message: _message ??
-                      'Scannez QR produits, QR simples ou codes-barres.',
-                  isError: _messageIsError,
-                ),
-              ),
-            ],
+            ),
+          ),
+        ),
+
+        // ── Status pill (bas) ───────────────────────────────────────────
+        Positioned(
+          left: 20,
+          right: 20,
+          bottom: 28,
+          child: _ScanStatusPill(
+            busy: _busy,
+            message: _message ?? 'Pointez sur un QR code ou code-barres.',
+            isError: _messageIsError,
           ),
         ),
       ],
+    );
+  }
+
+  Widget _overlay() => ColoredBox(
+        color: Colors.black.withValues(alpha: 0.52),
+      );
+}
+
+// ── Corner marker ─────────────────────────────────────────────────────────────
+class _Corner extends StatelessWidget {
+  const _Corner({
+    this.topLeft = false,
+    this.topRight = false,
+    this.bottomLeft = false,
+    this.bottomRight = false,
+    required this.len,
+    required this.width,
+    required this.radius,
+    required this.color,
+  });
+
+  final bool topLeft, topRight, bottomLeft, bottomRight;
+  final double len, width, radius;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    BorderRadius br;
+    if (topLeft) {
+      br = BorderRadius.only(topLeft: Radius.circular(radius));
+    } else if (topRight) {
+      br = BorderRadius.only(topRight: Radius.circular(radius));
+    } else if (bottomLeft) {
+      br = BorderRadius.only(bottomLeft: Radius.circular(radius));
+    } else {
+      br = BorderRadius.only(bottomRight: Radius.circular(radius));
+    }
+
+    final borderTop = topLeft || topRight;
+    final borderBottom = bottomLeft || bottomRight;
+    final borderLeft = topLeft || bottomLeft;
+    final borderRight = topRight || bottomRight;
+
+    return SizedBox(
+      width: len,
+      height: len,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: br,
+          border: Border(
+            top: borderTop
+                ? BorderSide(color: color, width: width)
+                : BorderSide.none,
+            bottom: borderBottom
+                ? BorderSide(color: color, width: width)
+                : BorderSide.none,
+            left: borderLeft
+                ? BorderSide(color: color, width: width)
+                : BorderSide.none,
+            right: borderRight
+                ? BorderSide(color: color, width: width)
+                : BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Bouton action header ───────────────────────────────────────────────────────
+class _ActionBtn extends StatelessWidget {
+  const _ActionBtn({
+    required this.icon,
+    required this.onTap,
+    this.badge,
+    this.accent = false,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final VoidCallback? onTap;
+  final String? badge;
+  final bool accent;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = accent
+        ? const Color(0xFF1565D8)
+        : Colors.black.withValues(alpha: 0.55);
+    final fg = enabled ? Colors.white : Colors.white38;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: accent ? 0 : 0.12),
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Center(child: Icon(icon, color: fg, size: 20)),
+            if (badge != null)
+              Positioned(
+                top: -5,
+                right: -5,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    badge!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
