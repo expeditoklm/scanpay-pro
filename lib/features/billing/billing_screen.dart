@@ -5,6 +5,7 @@ import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
 import '../../core/models/invoice.dart';
+import '../../core/services/xprinter_service.dart';
 import '../../core/utils/price_formatter.dart';
 import '../pos/invoice_pdf.dart';
 import 'billing_providers.dart';
@@ -423,6 +424,23 @@ class _InvoiceCard extends StatelessWidget {
 
   final Invoice invoice;
 
+  Future<void> _reprint(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Impression du recu en cours...')),
+    );
+    final result = await const XPrinterService().printSavedInvoice(invoice);
+    if (!context.mounted) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor:
+            result.success ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -545,11 +563,31 @@ class _InvoiceCard extends StatelessWidget {
                       color: Color(0xFF1565D8),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: Color(0xFF94A3B8),
-                    size: 18,
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Reimprimer le recu',
+                        onPressed: () => _reprint(context),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 34,
+                          minHeight: 34,
+                        ),
+                        icon: const Icon(
+                          Icons.print_rounded,
+                          color: Color(0xFF1565D8),
+                          size: 22,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF94A3B8),
+                        size: 18,
+                      ),
+                    ],
                   ),
                 ],
               ),

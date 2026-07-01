@@ -367,6 +367,7 @@ class XPrinterService {
     final reference = invoice.reference.isNotEmpty ? invoice.reference : invoice.id;
     final bytes = <int>[
       ..._init,
+      ..._codepage,
       ..._alignCenter,
       ..._boldOn,
       ..._largeText,
@@ -423,6 +424,10 @@ class XPrinterService {
   }
 
   static List<int> get _init => const [0x1B, 0x40];
+  // FS .  (0x1C 0x2E) => annule le mode caracteres chinois (sinon les octets
+  //                      >= 0x80 sont lus comme des ideogrammes sur 2 octets)
+  // ESC t 16 (0x1B 0x74 0x10) => page de codes WPC1252 (Windows-1252) pour les accents
+  static List<int> get _codepage => const [0x1C, 0x2E, 0x1B, 0x74, 16];
   static List<int> get _alignLeft => const [0x1B, 0x61, 0x00];
   static List<int> get _alignCenter => const [0x1B, 0x61, 0x01];
   static List<int> get _alignRight => const [0x1B, 0x61, 0x02];
@@ -433,7 +438,7 @@ class XPrinterService {
   static List<int> get _lf => const [0x0A];
   static List<int> get _cut => const [0x1D, 0x56, 0x42, 0x00];
 
-  static List<int> _rule() => _text('-' * _lineWidth)..addAll(_lf);
+  static List<int> _rule() => [..._text('-' * _lineWidth), ..._lf];
 
   static List<int> _text(String value) => _clean(value).codeUnits;
 
@@ -450,7 +455,7 @@ class XPrinterService {
   static String _clean(String value) {
     final buffer = StringBuffer();
     for (final rune in value.runes) {
-      if (rune >= 0x20 && rune <= 0x7E) {
+      if ((rune >= 0x20 && rune <= 0x7E) || (rune >= 0xA0 && rune <= 0xFF)) {
         buffer.writeCharCode(rune);
       } else {
         buffer.write('?');
