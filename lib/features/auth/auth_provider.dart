@@ -64,24 +64,31 @@ class AuthNotifier extends Notifier<AuthState?> {
     required String email,
     required String password,
     required String confirmPassword,
+    bool isVatRegistered = true,
+    String? mecefToken,
     String? logoPath,
   }) async {
+    final body = <String, dynamic>{
+      'company_name': companyName.trim(),
+      'commercial_name': commercialName.trim(),
+      'rccm': rccm.trim(),
+      'ifu': ifu.trim(),
+      'address': address.trim(),
+      'phone': phone.trim(),
+      'contact_email': contactEmail.trim(),
+      'email': email.trim(),
+      'password': password,
+      'confirm_password': confirmPassword,
+      'is_vat_registered': isVatRegistered,
+    };
+    if (mecefToken != null && mecefToken.trim().isNotEmpty) {
+      body['mecef_token'] = mecefToken.trim();
+    }
     final res = await _client
         .post(
           Uri.parse('$kErpBaseUrl/auth/register'),
           headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'company_name': companyName.trim(),
-            'commercial_name': commercialName.trim(),
-            'rccm': rccm.trim(),
-            'ifu': ifu.trim(),
-            'address': address.trim(),
-            'phone': phone.trim(),
-            'contact_email': contactEmail.trim(),
-            'email': email.trim(),
-            'password': password,
-            'confirm_password': confirmPassword,
-          }),
+          body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 12));
     final session = _decodeAuthResponse(res);

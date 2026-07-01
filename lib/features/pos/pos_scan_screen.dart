@@ -8,12 +8,12 @@ import '../../core/models/product.dart';
 import '../../core/services/device_feedback_service.dart';
 import '../../core/services/xprinter_service.dart';
 import '../../core/utils/price_formatter.dart';
+import '../../core/utils/product_image.dart';
 import '../../core/utils/qr_hmac.dart';
 import '../../data/repository_providers.dart';
 import '../auth/auth_provider.dart';
 import '../billing/billing_providers.dart';
 import '../products/products_providers.dart';
-import 'anti_fraud_sheet.dart';
 import 'cart_provider.dart';
 import 'pos_cart_screen.dart';
 import 'xprinter_config_sheet.dart';
@@ -51,10 +51,12 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
   final Map<String, DateTime> _recentScans = {};
 
   bool _busy = false;
-  bool _inModal = false;   // bloque les scans pendant un bottom sheet
   bool _printingReceipt = false;
   String? _message;
   bool _messageIsError = false;
+
+  // ── Aperçu fan des 3 derniers produits scannés ─────────────────────────
+  final List<Product> _recentProducts = [];
 
   @override
   void initState() {
@@ -103,11 +105,13 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
 
   bool _isCoolingDown(String code) {
     final now = DateTime.now();
+    // Nettoyage des codes trop anciens
     _recentScans.removeWhere(
-      (_, time) => now.difference(time) > const Duration(seconds: 3),
+      (_, time) => now.difference(time) > const Duration(seconds: 4),
     );
     final last = _recentScans[code];
-    if (last != null && now.difference(last) < const Duration(seconds: 2)) {
+    // Bloque le même code pendant 3 secondes → anti-double-scan
+    if (last != null && now.difference(last) < const Duration(seconds: 3)) {
       return true;
     }
     _recentScans[code] = now;
@@ -115,7 +119,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
   }
 
   Future<void> _onBarcode(BarcodeCapture capture) async {
-    if (_busy || _inModal) return;
+    if (_busy) return;
     final codes = capture.barcodes
         .map((barcode) => barcode.rawValue?.trim())
         .whereType<String>()
@@ -188,40 +192,18 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
       return;
     }
 
-    final hasReferenceImage = (product.referenceImagePath ?? '').isNotEmpty ||
-        (product.referenceImageUrl ?? '').isNotEmpty;
-    if (hasReferenceImage) {
-      // On ne stoppe PAS la caméra : stop()/start() déclenche
-      // onCameraAccessPrioritiesChanged qui cause un RenderBox layout crash
-      // dans MobileScanner. On bloque juste le traitement des scans.
-      if (mounted) setState(() => _inModal = true);
-      bool? ok;
-      try {
-        if (!mounted) return;
-        ok = await showModalBottomSheet<bool>(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (ctx) => AntiFraudSheet(product: product),
-        ).timeout(
-          const Duration(seconds: 60),
-          onTimeout: () => null, // libère _busy si le sheet reste bloqué
-        );
-      } catch (_) {
-        ok = null;
-      } finally {
-        if (mounted) setState(() => _inModal = false);
-      }
-      if (ok != true) {
-        await _feedback.scanWarning();
-        _setMessage('Ajout annule pour ${product.name}', isError: true);
-        return;
-      }
-    }
-
+    // Auto-passer : ajout immédiat au panier sans vérification anti-fraude.
+    // L'AntiFraudSheet peut être ouverte manuellement depuis le panier si besoin.
     ref.read(cartProvider.notifier).addProduct(product);
     await _feedback.scanSuccess();
     _setMessage('${product.name} ajoute au panier');
+
+    // Aperçu fan — garder les 3 derniers produits uniques
+    setState(() {
+      _recentProducts.removeWhere((p) => p.id == product.id);
+      _recentProducts.insert(0, product);
+      if (_recentProducts.length > 3) _recentProducts.removeLast();
+    });
   }
 
   void _setMessage(String message, {bool isError = false}) {
@@ -512,6 +494,14 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
           ),
         ),
 
+        // ── Fan : 3 derniers produits scannés ──────────────────────────
+        if (_recentProducts.isNotEmpty)
+          Positioned(
+            bottom: 92,
+            right: 16,
+            child: _RecentProductsFan(products: _recentProducts),
+          ),
+
         // ── Status pill (bas) ───────────────────────────────────────────
         Positioned(
           left: 20,
@@ -661,6 +651,154 @@ class _ActionBtn extends StatelessWidget {
     );
   }
 }
+
+// ── Fan des 3 derniers produits scannés ───────────────────────────────────────
+
+class _RecentProductsFan extends StatelessWidget {
+  const _RecentProductsFan({required this.products});
+  final List<Product> products;
+
+  // Dimensions carte
+  static const _cW   = 68.0;
+  static const _cH   = 86.0;
+  // Le container doit être assez large pour accueillir les cartes inclinées.
+  // Avec -0.28 rad (~16°) la carte du fond déborde d'environ 22px de chaque côté.
+  static const _boxW = 138.0;
+  // Hauteur : carte + marge basse pour les coins qui débordent lors de la rotation.
+  static const _boxH = _cH + 16.0;
+  // Offset vertical du pivot depuis le bas du container (absorbe le débord bas).
+  static const _pivotFromBottom = 12.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = products.take(3).toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    // Éventail à pivot commun (bas-centre) — comme des cartes en main.
+    // index 0 = le plus récent (devant), angle 0
+    // index 2 = le plus ancien (derrière), le plus incliné à gauche
+    const angles = <double>[0.0, -0.14, -0.28]; // 0°, ~8°, ~16°
+
+    return SizedBox(
+      width: _boxW,
+      height: _boxH,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Rendu de arrière vers avant (oldest → newest)
+          for (int i = items.length - 1; i >= 0; i--)
+            Positioned(
+              // Toutes les cartes partagent le même point bas-centre.
+              bottom: _pivotFromBottom,
+              left: (_boxW - _cW) / 2,
+              child: Transform.rotate(
+                angle: angles[i],
+                alignment: Alignment.bottomCenter,
+                child: _ProductMiniCard(
+                  product: items[i],
+                  isLatest: i == 0,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductMiniCard extends StatelessWidget {
+  const _ProductMiniCard({required this.product, this.isLatest = false});
+  final Product product;
+  final bool isLatest;
+
+  static const _w    = _RecentProductsFan._cW;
+  static const _h    = _RecentProductsFan._cH;
+  static const _imgH = 54.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: _w,
+      height: _h,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: isLatest
+            ? Border.all(color: const Color(0xFF22C1C3), width: 1.5)
+            : Border.all(color: Colors.white.withOpacity(0.6), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isLatest ? 0.22 : 0.14),
+            blurRadius: isLatest ? 12 : 6,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Image produit
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+            child: SizedBox(
+              height: _imgH,
+              child: buildProductImage(
+                product: product,
+                fit: BoxFit.cover,
+                fallback: Container(
+                  color: const Color(0xFFF1F5F9),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.inventory_2_rounded,
+                    size: 24,
+                    color: const Color(0xFFCBD5E1),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Nom produit
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                      height: 1.2,
+                    ),
+                  ),
+                  Text(
+                    formatPriceEuro(product.price),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF22C1C3),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Status pill ───────────────────────────────────────────────────────────────
 
 class _ScanStatusPill extends StatelessWidget {
   const _ScanStatusPill({

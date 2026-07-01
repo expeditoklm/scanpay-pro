@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../core/config/erp_config.dart';
 import '../core/models/invoice.dart';
 import '../core/models/product.dart';
+import '../core/services/mecef_service.dart';
 import '../features/auth/auth_provider.dart';
 import 'offline_storage.dart';
 
@@ -19,6 +20,7 @@ class InvoicesRepository {
   final http.Client _client;
   final Map<String, List<Invoice>> _cache = {};
   final OfflineStorage _offlineStorage = OfflineStorage();
+  final MecefService _mecef = MecefService();
 
   Map<String, String> get _headers {
     final auth = ref.read(authProvider);
@@ -64,7 +66,8 @@ class InvoicesRepository {
 
     try {
       await syncPendingSales(companyId);
-      final response = await _getWithRetry(Uri.parse('$kErpBaseUrl/api/sales'));
+      final response =
+          await _getWithRetry(Uri.parse('$kErpBaseUrl/api/sales'));
       if (response.statusCode != 200) {
         throw Exception('ERP HTTP ${response.statusCode}');
       }
@@ -101,6 +104,8 @@ class InvoicesRepository {
     required String companyId,
     required String invoiceId,
     required List<({Product product, int qty})> lines,
+    String paymentMethod = 'Espece',
+    double amountPaid = 0,
   }) async {
     final auth = ref.read(authProvider);
     if (auth == null) return null;
@@ -114,7 +119,7 @@ class InvoicesRepository {
           },
       ],
       'source': 'mobile_app',
-      'note': 'Vente enregistree depuis l’application mobile',
+      'note': "Vente enregistree depuis l'application mobile",
     };
 
     try {
@@ -123,15 +128,47 @@ class InvoicesRepository {
         jsonEncode(payload),
       );
       if (response.statusCode != 201 && response.statusCode != 200) {
-        throw Exception('Creation vente ERP impossible (${response.statusCode})');
+        throw Exception(
+            'Creation vente ERP impossible (${response.statusCode})');
       }
 
       final sale = jsonDecode(response.body) as Map<String, dynamic>;
-      final invoice = _fromSaleJson(
+      var invoice = _fromSaleJson(
         sale,
         companyId: companyId,
         companyName: auth.companyName,
+        companyIfu: auth.companyIfu,
+        companyRc: auth.companyRc,
+        companyAddress: auth.companyAddress,
+        companyPhone: auth.companyPhone,
+        isVatRegistered: auth.isVatRegistered,
+        paymentMethod: paymentMethod,
+        amountPaid: amountPaid,
       );
+
+      // Certification e-MECeF (DGI Benin)
+      // Bascule automatiquement en mode reel si l'IFU et le token DGI
+      // sont configures dans le compte (enregistres a l'inscription etape 3).
+      // Mode mock local utilise si les cles sont absentes.
+      final mecefConfig = auth.hasMecefCredentials
+          ? MecefConfig(ifu: auth.companyIfu!, token: auth.mecefToken!)
+          : MecefConfig.placeholder;
+      final mecefResult = await _mecef.certifyInvoice(
+        invoice,
+        config: mecefConfig,
+      );
+      if (mecefResult.success) {
+        invoice = invoice.copyWith(
+          mecefCU: mecefResult.cu,
+          mecefQrBase64: mecefResult.qrBase64,
+          mecefDatetime: mecefResult.datetime,
+          mecefStatus: mecefResult.status,
+          mecefNim: mecefResult.nim,
+          mecefCompteur: mecefResult.compteur,
+        );
+      } else {
+        invoice = invoice.copyWith(mecefStatus: MecefStatus.pending);
+      }
 
       final existing = List<Invoice>.from(_cache[companyId] ?? const []);
       existing.removeWhere((item) => item.id == invoice.id);
@@ -149,6 +186,13 @@ class InvoicesRepository {
         note: payload['note'] as String?,
         source: 'mobile_offline',
         pendingSync: true,
+        isVatRegistered: auth.isVatRegistered,
+        companyIfu: auth.companyIfu,
+        companyRc: auth.companyRc,
+        companyAddress: auth.companyAddress,
+        companyPhone: auth.companyPhone,
+        paymentMethod: paymentMethod,
+        amountPaid: amountPaid,
         lines: [
           for (final line in lines)
             InvoiceLine(
@@ -192,13 +236,13 @@ class InvoicesRepository {
 
     for (final entry in pendingSales) {
       try {
-        final payload = Map<String, dynamic>.from(entry['payload'] as Map);
+        final payload =
+            Map<String, dynamic>.from(entry['payload'] as Map);
 
-        // Si des lignes référencent encore des produits locaux (local-xxx),
-        // on ne peut pas encore les envoyer au serveur → on les reporte.
         final items = (payload['items'] as List<dynamic>? ?? const []);
         final hasLocalIds = items.any((item) {
-          final pid = (item as Map<String, dynamic>)['product_id']?.toString() ?? '';
+          final pid =
+              (item as Map<String, dynamic>)['product_id']?.toString() ?? '';
           return pid.startsWith('local-');
         });
         if (hasLocalIds) {
@@ -211,15 +255,9 @@ class InvoicesRepository {
           jsonEncode(payload),
         );
 
-        // 404 = produit introuvable sur le serveur (supprimé ou jamais synchro)
-        // 400 = stock insuffisant côté serveur
-        // Ces cas sont irrécupérables → on retire la vente de la queue
-        // plutôt que de réessayer en boucle
         if (response.statusCode == 404 || response.statusCode == 400) {
           final body = response.body;
-          print('[SYNC] Vente ignorée (${response.statusCode}): $body');
-          // On retire de remaining → la vente sera définitivement marquée comme non-sync
-          // On met à jour la facture locale pour retirer le pendingSync
+          print('[SYNC] Vente ignoree (${response.statusCode}): $body');
           final oldInvoiceId = entry['invoice_id']?.toString();
           final idx = invoices.indexWhere((inv) => inv.id == oldInvoiceId);
           if (idx >= 0) {
@@ -228,7 +266,7 @@ class InvoicesRepository {
               source: 'mobile_offline_failed',
             );
           }
-          continue; // Ne pas ajouter à remaining
+          continue;
         }
 
         if (response.statusCode != 201 && response.statusCode != 200) {
@@ -276,7 +314,8 @@ class InvoicesRepository {
                 'quantity': line.quantity,
               },
           ],
-          'source': invoice.source.isEmpty ? 'mobile_offline' : invoice.source,
+          'source':
+              invoice.source.isEmpty ? 'mobile_offline' : invoice.source,
           'note': invoice.note ?? 'Vente restauree pour synchronisation',
         },
       });
@@ -294,6 +333,13 @@ class InvoicesRepository {
     Map<String, dynamic> json, {
     required String companyId,
     required String companyName,
+    bool isVatRegistered = true,
+    String? companyIfu,
+    String? companyRc,
+    String? companyAddress,
+    String? companyPhone,
+    String paymentMethod = 'Espece',
+    double amountPaid = 0,
   }) {
     final rawItems = (json['items'] as List<dynamic>? ?? const []);
     return Invoice(
@@ -301,12 +347,20 @@ class InvoicesRepository {
       reference: json['reference'] as String? ?? '',
       companyId: companyId,
       companyName: companyName,
-      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
-          DateTime.now(),
+      createdAt:
+          DateTime.tryParse(json['created_at'] as String? ?? '') ??
+              DateTime.now(),
       customer: json['customer'] as String?,
       note: json['note'] as String?,
       source: json['source'] as String? ?? 'mobile_app',
       pendingSync: false,
+      isVatRegistered: isVatRegistered,
+      companyIfu: companyIfu,
+      companyRc: companyRc,
+      companyAddress: companyAddress,
+      companyPhone: companyPhone,
+      paymentMethod: paymentMethod,
+      amountPaid: amountPaid,
       lines: rawItems.map((item) {
         final map = item as Map<String, dynamic>;
         return InvoiceLine(

@@ -41,11 +41,29 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
   bool _checkoutLoading = false;
   String? _error;
 
+  /// Affiche le dialogue de paiement et retourne (method, amountPaid)
+  /// ou null si l'utilisateur annule.
+  Future<({String method, double amountPaid})?> _showPaymentDialog(
+      double total) async {
+    return showModalBottomSheet<({String method, double amountPaid})>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PaymentSheet(total: total),
+    );
+  }
+
   Future<void> _checkout() async {
     final auth = ref.read(authProvider);
     if (auth == null) return;
     final lines = ref.read(cartProvider);
     if (lines.isEmpty) return;
+
+    final total = lines.fold<double>(0, (s, l) => s + l.lineTotal);
+
+    // ── Dialogue paiement ──────────────────────────────────────────────
+    final payment = await _showPaymentDialog(total);
+    if (payment == null) return; // annulé
 
     setState(() {
       _checkoutLoading = true;
@@ -59,6 +77,8 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
         companyId: auth.companyId,
         invoiceId: id,
         lines: [for (final l in lines) (product: l.product, qty: l.quantity)],
+        paymentMethod: payment.method,
+        amountPaid: payment.amountPaid,
       );
       if (inv == null) {
         setState(() => _error = 'Stock insuffisant pour au moins une ligne.');
@@ -569,6 +589,274 @@ class _EmptyCart extends StatelessWidget {
               style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Dialogue paiement ────────────────────────────────────────────────────────
+
+class _PaymentSheet extends StatefulWidget {
+  const _PaymentSheet({required this.total});
+  final double total;
+
+  @override
+  State<_PaymentSheet> createState() => _PaymentSheetState();
+}
+
+class _PaymentSheetState extends State<_PaymentSheet> {
+  String _method = 'Espece';
+  final _ctrl = TextEditingController();
+  double _amountPaid = 0;
+
+  double get _change =>
+      _amountPaid > widget.total ? _amountPaid - widget.total : 0;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Poignée
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // Titre + total
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Mode de paiement',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A))),
+              Text(
+                formatPriceEuro(widget.total),
+                style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: _kBlue1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Boutons méthode
+          Row(
+            children: [
+              _MethodBtn(
+                label: 'Espèce',
+                icon: Icons.payments_outlined,
+                selected: _method == 'Espece',
+                onTap: () => setState(() => _method = 'Espece'),
+              ),
+              const SizedBox(width: 10),
+              _MethodBtn(
+                label: 'Carte',
+                icon: Icons.credit_card_rounded,
+                selected: _method == 'Carte',
+                onTap: () => setState(() {
+                  _method = 'Carte';
+                  _amountPaid = widget.total;
+                }),
+              ),
+              const SizedBox(width: 10),
+              _MethodBtn(
+                label: 'Mobile',
+                icon: Icons.phone_android_rounded,
+                selected: _method == 'Mobile Money',
+                onTap: () => setState(() {
+                  _method = 'Mobile Money';
+                  _amountPaid = widget.total;
+                }),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Champ montant reçu (Espèce seulement)
+          if (_method == 'Espece') ...[
+            TextField(
+              controller: _ctrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: false),
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Montant reçu (FCFA)',
+                hintText: widget.total.toStringAsFixed(0),
+                suffixText: 'FCFA',
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFD7E2F2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide:
+                      const BorderSide(color: _kBlue1, width: 1.5),
+                ),
+              ),
+              onChanged: (v) => setState(
+                  () => _amountPaid = double.tryParse(v) ?? 0),
+            ),
+            const SizedBox(height: 12),
+            // Rendu monnaie
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: _change > 0
+                    ? const Color(0xFFECFDF5)
+                    : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _change > 0
+                      ? const Color(0xFF6EE7B7)
+                      : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Rendu monnaie',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: _change > 0
+                          ? const Color(0xFF059669)
+                          : const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  Text(
+                    formatPriceEuro(_change),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: _change > 0
+                          ? const Color(0xFF059669)
+                          : const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Bouton confirmer
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [_kBlue2, _kBlue1, _kTeal],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: ElevatedButton(
+                onPressed: () {
+                  final paid = _method == 'Espece'
+                      ? (_amountPaid > 0 ? _amountPaid : widget.total)
+                      : widget.total;
+                  Navigator.of(context).pop(
+                    (method: _method, amountPaid: paid),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                ),
+                child: const Text(
+                  'Confirmer et encaisser',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MethodBtn extends StatelessWidget {
+  const _MethodBtn({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? _kBlue1 : const Color(0xFFE2E8F0),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon,
+                  size: 22,
+                  color: selected ? _kBlue1 : const Color(0xFF94A3B8)),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? _kBlue1 : const Color(0xFF94A3B8),
+                  )),
+            ],
+          ),
         ),
       ),
     );
