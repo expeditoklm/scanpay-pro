@@ -57,30 +57,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool   _isVatRegistered     = true;
   String? _error;
 
-  static const int _totalSteps = 4;
+  // ── Étapes dynamiques selon régime fiscal ────────────────────────────────
+  // Non assujetti → 3 étapes (MECeF skippée)
+  // Assujetti TVA → 4 étapes avec configuration MECeF
 
-  static const _stepTitles = [
-    'Identite boutique',
-    'Informations legales',
-    'Configuration MECeF',
-    'Compte administrateur',
-  ];
+  int get _totalSteps => _isVatRegistered ? 4 : 3;
 
-  static const _stepSubtitles = [
-    'Nom, identite visuelle et enseigne',
-    'IFU, RCCM, coordonnees et regime TVA',
-    'Token DGI pour factures normalisees',
-    'Email et mot de passe admin',
-  ];
+  List<String> get _stepTitles => _isVatRegistered
+      ? const [
+          'Identite boutique',
+          'Informations legales',
+          'Configuration MECeF',
+          'Compte administrateur',
+        ]
+      : const [
+          'Identite boutique',
+          'Informations legales',
+          'Compte administrateur',
+        ];
 
-  static const _stepIcons = [
-    Icons.storefront_rounded,
-    Icons.account_balance_rounded,
-    Icons.receipt_long_rounded,
-    Icons.manage_accounts_rounded,
-  ];
+  List<String> get _stepSubtitles => _isVatRegistered
+      ? const [
+          'Nom, identite visuelle et enseigne',
+          'IFU, RCCM, coordonnees et regime TVA',
+          'Token DGI pour factures normalisees',
+          'Email et mot de passe admin',
+        ]
+      : const [
+          'Nom, identite visuelle et enseigne',
+          'IFU, RCCM, coordonnees et regime TVA',
+          'Email et mot de passe admin',
+        ];
+
+  List<IconData> get _stepIcons => _isVatRegistered
+      ? const [
+          Icons.storefront_rounded,
+          Icons.account_balance_rounded,
+          Icons.receipt_long_rounded,
+          Icons.manage_accounts_rounded,
+        ]
+      : const [
+          Icons.storefront_rounded,
+          Icons.account_balance_rounded,
+          Icons.manage_accounts_rounded,
+        ];
 
   GlobalKey<FormState> get _currentKey {
+    if (!_isVatRegistered) {
+      switch (_step) {
+        case 1: return _step1Key;
+        case 2: return _step2Key;
+        default: return _step4Key; // étape 3 = compte admin (MECeF skippée)
+      }
+    }
     switch (_step) {
       case 1:  return _step1Key;
       case 2:  return _step2Key;
@@ -470,7 +499,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   // ── Formulaires par étape ─────────────────────────────────────────────────
   Widget _buildStepForm() {
-    switch (_step) {
+    // Non assujetti : étape 3 = compte admin (MECeF ignorée)
+    final formStep = (!_isVatRegistered && _step == 3) ? 4 : _step;
+    switch (formStep) {
       // ── Étape 1 : Identité boutique ──────────────────────────────────────
       case 1:
         return Form(
@@ -526,7 +557,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 label: 'RCCM - Registre du Commerce',
                 hint: 'Ex: M-RB/LOT/17B 17955',
                 icon: Icons.description_outlined,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Requis' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Requis';
+                  if (v.trim().length < 3) return '3 caracteres minimum';
+                  return null;
+                },
               ),
               const SizedBox(height: 14),
               _field(
@@ -535,7 +570,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 hint: 'Ex: Cadjehoun, Cotonou',
                 icon: Icons.location_on_outlined,
                 maxLines: 2,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Requis' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Requis';
+                  if (v.trim().length < 5) return '5 caracteres minimum';
+                  return null;
+                },
               ),
               const SizedBox(height: 14),
               _field(
@@ -545,7 +584,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 icon: Icons.phone_outlined,
                 action: TextInputAction.done,
                 keyboardType: TextInputType.phone,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Requis' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Requis';
+                  if (v.trim().length < 6) return '6 caracteres minimum';
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               // Régime TVA
@@ -570,13 +613,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: 10),
                     _VatToggle(
                       value: _isVatRegistered,
-                      onChanged: (v) => setState(() => _isVatRegistered = v),
+                      onChanged: (v) => setState(() {
+                        _isVatRegistered = v;
+                        // Si on bascule en non-assujetti et qu'on était à l'étape MECeF, reculer
+                        if (!v && _step > _totalSteps) _step = _totalSteps;
+                      }),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       _isVatRegistered
-                          ? 'TVA 18% + AIB [B] 1% apparaitront sur vos factures MECeF.'
-                          : 'Regime simplifie : pas de TVA sur le ticket de caisse.',
+                          ? 'TVA 18% + AIB [B] 1% apparaitront sur vos factures normalisees MECeF.'
+                          : 'Regime simplifie : vos factures seront emises en mode FACTURE PROFORMA, sans TVA.',
                       style: TextStyle(
                         fontSize: 11,
                         color: _isVatRegistered

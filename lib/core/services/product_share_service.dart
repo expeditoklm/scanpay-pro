@@ -238,13 +238,18 @@ class ProductShareService {
     final resolvedUrl = resolveProductImageUrl(rawUrl);
     if (resolvedUrl == null) return null;
 
-    final response = await _client
-        .get(Uri.parse(resolvedUrl))
-        .timeout(const Duration(seconds: 12));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    try {
+      final response = await _client
+          .get(Uri.parse(resolvedUrl))
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      return response.bodyBytes;
+    } catch (_) {
+      // Hors-ligne ou timeout → on utilise l'image de fallback générée localement
       return null;
     }
-    return response.bodyBytes;
   }
 
   String _buildCaption(Product product) {

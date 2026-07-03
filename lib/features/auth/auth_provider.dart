@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -38,19 +40,23 @@ class AuthNotifier extends Notifier<AuthState?> {
     required String identifier,
     required String password,
   }) async {
-    final res = await _client
-        .post(
-          Uri.parse('$kErpBaseUrl/auth/login'),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'identifier': identifier.trim(),
-            'password': password,
-          }),
-        )
-        .timeout(const Duration(seconds: 12));
-    final session = _decodeAuthResponse(res);
-    await setSession(session);
-    return session;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$kErpBaseUrl/auth/login'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'identifier': identifier.trim(),
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 12));
+      final session = _decodeAuthResponse(res);
+      await setSession(session);
+      return session;
+    } catch (e) {
+      _rethrowNetworkError(e);
+    }
   }
 
   Future<AuthState> register({
@@ -84,21 +90,25 @@ class AuthNotifier extends Notifier<AuthState?> {
     if (mecefToken != null && mecefToken.trim().isNotEmpty) {
       body['mecef_token'] = mecefToken.trim();
     }
-    final res = await _client
-        .post(
-          Uri.parse('$kErpBaseUrl/auth/register'),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode(body),
-        )
-        .timeout(const Duration(seconds: 12));
-    final session = _decodeAuthResponse(res);
-    await setSession(session);
-    if (logoPath != null && logoPath.trim().isNotEmpty) {
-      final updated = await _uploadCompanyLogo(session, logoPath.trim());
-      await setSession(updated);
-      return updated;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$kErpBaseUrl/auth/register'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 12));
+      final session = _decodeAuthResponse(res);
+      await setSession(session);
+      if (logoPath != null && logoPath.trim().isNotEmpty) {
+        final updated = await _uploadCompanyLogo(session, logoPath.trim());
+        await setSession(updated);
+        return updated;
+      }
+      return session;
+    } catch (e) {
+      _rethrowNetworkError(e);
     }
-    return session;
   }
 
   Future<bool> refreshIfNeeded() async {
@@ -182,8 +192,51 @@ class AuthNotifier extends Notifier<AuthState?> {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return AuthState.fromJson(body);
     }
-    final detail = body['detail']?.toString() ?? 'Erreur inconnue';
+    final rawDetail = body['detail'];
+    final detail = rawDetail is List
+        ? _parseValidationErrors(rawDetail)
+        : rawDetail?.toString() ?? 'Erreur inconnue';
     throw Exception(detail);
+  }
+
+  /// Traduit les erreurs de validation Pydantic (422) en messages lisibles
+  String _parseValidationErrors(List<dynamic> errors) {
+    const fields = {
+      'rccm'             : 'RCCM',
+      'ifu'              : 'IFU',
+      'address'          : 'Adresse',
+      'phone'            : 'Telephone',
+      'company_name'     : 'Nom boutique',
+      'commercial_name'  : 'Nom commercial',
+      'email'            : 'Email',
+      'password'         : 'Mot de passe',
+      'confirm_password' : 'Confirmation mot de passe',
+      'contact_email'    : 'Email de contact',
+      'mecef_token'      : 'Token MECeF',
+    };
+
+    final msgs = <String>[];
+    for (final e in errors) {
+      if (e is! Map) continue;
+      final loc  = (e['loc'] as List?)?.lastOrNull?.toString() ?? '';
+      final type = e['type']?.toString() ?? '';
+      final ctx  = e['ctx'] as Map? ?? {};
+      final field = fields[loc] ?? loc;
+
+      if (type == 'string_too_short') {
+        msgs.add('$field : minimum ${ctx['min_length']} caracteres requis');
+      } else if (type == 'missing') {
+        msgs.add('$field : champ requis');
+      } else if (type == 'value_error') {
+        msgs.add('$field : valeur invalide');
+      } else {
+        msgs.add('$field : ${e['msg'] ?? type}');
+      }
+    }
+
+    return msgs.isEmpty
+        ? 'Donnees invalides. Verifiez les champs du formulaire.'
+        : msgs.join('\n');
   }
 
   static AuthState? decodeStoredState(String? raw) {
@@ -200,6 +253,24 @@ class AuthNotifier extends Notifier<AuthState?> {
     }
     final detail = body['detail']?.toString() ?? 'Erreur inconnue';
     throw Exception(detail);
+  }
+
+  /// Traduit les exceptions réseau bas niveau en messages lisibles
+  Never _rethrowNetworkError(Object e) {
+    if (e is SocketException || e.toString().contains('SocketException')) {
+      throw Exception(
+          'Pas de connexion internet. Verifiez votre reseau et reessayez.');
+    }
+    if (e.toString().contains('ClientException') ||
+        e.toString().contains('SocketFailed') ||
+        e.toString().contains('host lookup')) {
+      throw Exception(
+          'Impossible de joindre le serveur. Verifiez votre connexion.');
+    }
+    if (e is TimeoutException || e.toString().contains('TimeoutException')) {
+      throw Exception('Le serveur ne repond pas. Reessayez dans un moment.');
+    }
+    throw e;
   }
 
   Map<String, dynamic> _decodeBody(http.Response res) {

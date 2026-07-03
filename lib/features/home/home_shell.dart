@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter/material.dart';
@@ -26,6 +28,8 @@ class _HomeShellState extends ConsumerState<HomeShell>
     with WidgetsBindingObserver {
   int _index = 1;
   Timer? _syncTimer;
+  bool _isOffline = false;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
   @override
   void initState() {
@@ -37,11 +41,25 @@ class _HomeShellState extends ConsumerState<HomeShell>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(offlineSyncProvider).syncCurrentCompany();
     });
+    // Vérification initiale + écoute des changements de connectivité
+    Connectivity().checkConnectivity().then(_handleConnectivity);
+    _connectivitySub = Connectivity()
+        .onConnectivityChanged
+        .listen(_handleConnectivity);
+  }
+
+  void _handleConnectivity(List<ConnectivityResult> results) {
+    final offline = results.isEmpty ||
+        results.every((r) => r == ConnectivityResult.none);
+    if (mounted && offline != _isOffline) {
+      setState(() => _isOffline = offline);
+    }
   }
 
   @override
   void dispose() {
     _syncTimer?.cancel();
+    _connectivitySub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -232,26 +250,11 @@ class _HomeShellState extends ConsumerState<HomeShell>
                     child: Container(
                       color: Colors.white,
                       child: absoluteLogoUrl != null
-                          ? Image.network(
-                              absoluteLogoUrl,
+                          ? CachedNetworkImage(
+                              imageUrl: absoluteLogoUrl,
                               fit: BoxFit.cover,
-                              loadingBuilder: (_, child, progress) =>
-                                  progress == null
-                                      ? child
-                                      : const ShimmerBox(),
-                              frameBuilder: (_, child, frame,
-                                  wasSynchronouslyLoaded) {
-                                if (wasSynchronouslyLoaded || frame != null) {
-                                  return child;
-                                }
-                                return AnimatedOpacity(
-                                  opacity: frame == null ? 0.0 : 1.0,
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeOut,
-                                  child: child,
-                                );
-                              },
-                              errorBuilder: (_, __, ___) => Center(
+                              placeholder: (_, __) => const ShimmerBox(),
+                              errorWidget: (_, __, ___) => Center(
                                 child: Text(
                                   initials.isEmpty ? 'BT' : initials,
                                   style: Theme.of(context)
@@ -263,6 +266,8 @@ class _HomeShellState extends ConsumerState<HomeShell>
                                       ),
                                 ),
                               ),
+                              fadeInDuration:
+                                  const Duration(milliseconds: 300),
                             )
                           : Center(
                               child: Text(
@@ -309,15 +314,51 @@ class _HomeShellState extends ConsumerState<HomeShell>
             ),
           ],
         ),
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: AppTheme.brandShellGradient,
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+        body: Column(
+          children: [
+            // ── Bannière hors-ligne ──────────────────────────────────────
+            AnimatedSize(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeInOut,
+              child: _isOffline
+                  ? Container(
+                      width: double.infinity,
+                      color: const Color(0xFFFF6B00),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 7, horizontal: 16),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.wifi_off_rounded,
+                              color: Colors.white, size: 15),
+                          SizedBox(width: 8),
+                          Text(
+                            'Hors-ligne — les données peuvent être obsolètes',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
-          ),
-          child: IndexedStack(index: _index, children: pages),
+            // ── Contenu principal ────────────────────────────────────────
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: AppTheme.brandShellGradient,
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: IndexedStack(index: _index, children: pages),
+              ),
+            ),
+          ],
         ),
         bottomNavigationBar: _HomeBottomBar(
           currentIndex: _index,
@@ -705,26 +746,11 @@ class _ProfileSheetState extends State<_ProfileSheet>
                     child: Container(
                       color: const Color(0xFFEFF6FF),
                       child: widget.absoluteLogoUrl != null
-                          ? Image.network(
-                              widget.absoluteLogoUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: widget.absoluteLogoUrl!,
                               fit: BoxFit.cover,
-                              loadingBuilder: (_, child, progress) =>
-                                  progress == null
-                                      ? child
-                                      : const ShimmerBox(),
-                              frameBuilder: (_, child, frame,
-                                  wasSynchronouslyLoaded) {
-                                if (wasSynchronouslyLoaded || frame != null) {
-                                  return child;
-                                }
-                                return AnimatedOpacity(
-                                  opacity: frame == null ? 0.0 : 1.0,
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeOut,
-                                  child: child,
-                                );
-                              },
-                              errorBuilder: (_, __, ___) => Center(
+                              placeholder: (_, __) => const ShimmerBox(),
+                              errorWidget: (_, __, ___) => Center(
                                 child: Text(
                                   widget.initials,
                                   style: const TextStyle(
@@ -734,6 +760,8 @@ class _ProfileSheetState extends State<_ProfileSheet>
                                   ),
                                 ),
                               ),
+                              fadeInDuration:
+                                  const Duration(milliseconds: 300),
                             )
                           : Center(
                               child: Text(

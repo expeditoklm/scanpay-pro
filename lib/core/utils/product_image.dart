@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../config/erp_config.dart';
@@ -24,28 +25,16 @@ Widget buildProductImage({
     return Image.file(File(localPath), fit: fit);
   }
 
-  // ── Image distante avec shimmer + fondu entrant ──────────────────────────
+  // ── Image distante avec cache disque + shimmer + fondu ──────────────────
   final remoteUrl = resolveProductImageUrl(product.referenceImageUrl);
   if (remoteUrl != null) {
-    return Image.network(
-      remoteUrl,
+    return CachedNetworkImage(
+      imageUrl: remoteUrl,
       fit: fit,
-      // Shimmer tant que les octets n'ont pas fini de charger
-      loadingBuilder: (_, child, loadingProgress) {
-        if (loadingProgress == null) return child;
-        return const ShimmerBox();
-      },
-      // Fondu doux (300 ms) quand l'image est prête
-      frameBuilder: (_, child, frame, wasSynchronouslyLoaded) {
-        if (wasSynchronouslyLoaded || frame != null) return child;
-        return AnimatedOpacity(
-          opacity: frame == null ? 0.0 : 1.0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-          child: child,
-        );
-      },
-      errorBuilder: (_, __, ___) => fallback ?? const SizedBox.shrink(),
+      placeholder: (_, __) => const ShimmerBox(),
+      errorWidget: (_, __, ___) => fallback ?? const SizedBox.shrink(),
+      fadeInDuration: const Duration(milliseconds: 300),
+      fadeOutDuration: const Duration(milliseconds: 100),
     );
   }
 

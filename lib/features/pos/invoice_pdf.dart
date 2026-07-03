@@ -14,8 +14,12 @@ Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat _) async {
 
   final lineCount     = invoice.lines.length;
   final hasMecef      = invoice.isMecefCertified;
-  final showMecef     = hasMecef || invoice.mecefStatus == MecefStatus.pending;
-  final showVat       = invoice.isVatRegistered;
+
+  // PROFORMA = non assujetti TVA sans certification MECeF effective
+  // NORMALISÉE = assujetti avec ou sans certification (pending ou certified)
+  final isProforma    = !invoice.isVatRegistered && !hasMecef;
+  final showMecef     = !isProforma && (hasMecef || invoice.mecefStatus == MecefStatus.pending);
+  final showVat       = invoice.isVatRegistered && !isProforma;
 
   // ── Lignes d'en-tête optionnelles ──────────────────────────────────────────
   final hasAddress = (invoice.companyAddress ?? '').trim().isNotEmpty;
@@ -68,8 +72,20 @@ Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat _) async {
           pw.SizedBox(height: 1),
           pw.Center(
             child: pw.Text(
+              isProforma ? 'FACTURE PROFORMA' : 'FACTURE NORMALISEE',
+              style: pw.TextStyle(
+                fontSize: isProforma ? 8.5 : 7,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: 0.8,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+          pw.SizedBox(height: 1),
+          pw.Center(
+            child: pw.Text(
               'QuickSellPay - Recu de vente',
-              style: const pw.TextStyle(fontSize: 6.5),
+              style: const pw.TextStyle(fontSize: 6),
               textAlign: pw.TextAlign.center,
             ),
           ),

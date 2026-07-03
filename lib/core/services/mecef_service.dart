@@ -128,7 +128,7 @@ class MecefService {
               'Content-Type': 'application/json',
               // NOTE : vérifier le format d'auth exact dans la doc DGI
               // Certaines implémentations utilisent 'Token <token>' au lieu de 'Bearer'
-              'Authorization': 'Bearer ${config.token}',
+              'Authorization': 'Bearer ${config.token}', 
             },
             body: jsonEncode(_buildPayload(invoice, config.ifu)),
           )
