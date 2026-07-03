@@ -145,7 +145,7 @@ class _ProductEditScreenState extends ConsumerState<ProductEditScreen> {
             syncedRemotely
                 ? 'Image et produit sauvegardés'
                 : 'Produit sauvegardé localement. Synchronisation serveur en attente.',
-          ),
+              textAlign: TextAlign.center,),
         ),
       );
       Navigator.of(context).pop(true);

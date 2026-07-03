@@ -170,7 +170,8 @@ class _HomeShellState extends ConsumerState<HomeShell>
           await Clipboard.setData(ClipboardData(text: auth.companyId));
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Matricule copié dans le presse-papiers'),
+              content: Text('Matricule copié dans le presse-papiers',
+              textAlign: TextAlign.center),
               duration: Duration(seconds: 2),
               behavior: SnackBarBehavior.floating,
             ));

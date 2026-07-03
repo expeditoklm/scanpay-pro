@@ -92,7 +92,7 @@ class _ProductImageEditScreenState extends ConsumerState<ProductImageEditScreen>
             syncedRemotely
                 ? 'Image sauvegardée'
                 : 'Image sauvegardée localement. Synchronisation serveur en attente.',
-          ),
+              textAlign: TextAlign.center,),
         ),
       );
       Navigator.of(context).pop(true);

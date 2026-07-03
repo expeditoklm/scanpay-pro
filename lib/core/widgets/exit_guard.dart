@@ -27,7 +27,8 @@ class _ExitGuardState extends State<ExitGuard> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
-          content: Text('Appuyez encore sur retour pour quitter.'),
+          content: Text('Appuyez encore sur retour pour quitter.',
+              textAlign: TextAlign.center),
           duration: Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),

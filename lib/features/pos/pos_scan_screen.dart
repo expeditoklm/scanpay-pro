@@ -186,17 +186,31 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
   }
 
   Future<void> _addProduct(Product product) async {
+    // ── Stock initial nul ────────────────────────────────────────────────
     if (product.stock < 1) {
       await _feedback.scanWarning();
-      _setMessage('Stock insuffisant pour ${product.name}', isError: true);
+      _setMessage('Stock épuisé pour ${product.name}', isError: true);
+      return;
+    }
+
+    // ── Quantité déjà dans le panier ≥ stock disponible ─────────────────
+    final cart = ref.read(cartProvider);
+    final existing = cart.where((l) => l.product.id == product.id);
+    final currentQty = existing.isEmpty ? 0 : existing.first.quantity;
+
+    if (currentQty >= product.stock) {
+      await _feedback.scanWarning();
+      _setMessage(
+        'Stock max atteint pour ${product.name} (${product.stock} en stock)',
+        isError: true,
+      );
       return;
     }
 
     // Auto-passer : ajout immédiat au panier sans vérification anti-fraude.
-    // L'AntiFraudSheet peut être ouverte manuellement depuis le panier si besoin.
     ref.read(cartProvider.notifier).addProduct(product);
     await _feedback.scanSuccess();
-    _setMessage('${product.name} ajoute au panier');
+    _setMessage('${product.name} ajouté au panier');
 
     // Aperçu fan — garder les 3 derniers produits uniques
     setState(() {
@@ -214,10 +228,14 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
     });
   }
 
-  void _openCart() {
-    Navigator.of(context).push<void>(
+  Future<void> _openCart() async {
+    await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => const PosCartScreen()),
     );
+    // Panier vidé ou vente validée depuis l'écran panier → réinitialiser le fan
+    if (mounted && ref.read(cartProvider).isEmpty) {
+      setState(() => _recentProducts.clear());
+    }
   }
 
   Future<void> _drawReceipt() async {
@@ -247,6 +265,7 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
         return;
       }
       ref.read(cartProvider.notifier).clear();
+      setState(() => _recentProducts.clear()); // réinitialise le fan après vente
       ref.invalidate(productsListProvider);
       ref.read(salesRefreshProvider.notifier).state++;
       final printResult = await _xprinter.printSavedInvoice(invoice);

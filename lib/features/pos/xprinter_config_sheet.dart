@@ -71,7 +71,8 @@ class _XPrinterConfigSheetState extends State<XPrinterConfigSheet>
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${device.name} configuree pour les recus'),
+        content: Text('${device.name} configuree pour les recus',
+              textAlign: TextAlign.center),
         behavior: SnackBarBehavior.floating,
         backgroundColor: _kBlue1,
       ),
@@ -83,7 +84,8 @@ class _XPrinterConfigSheetState extends State<XPrinterConfigSheet>
     final port = int.tryParse(_portController.text.trim()) ?? 9100;
     if (host.isEmpty || port < 1 || port > 65535) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Adresse IP ou port invalide')),
+        const SnackBar(content: Text('Adresse IP ou port invalide',
+              textAlign: TextAlign.center)),
       );
       return;
     }

@@ -5,6 +5,7 @@ import '../../core/models/product.dart';
 import '../../core/services/product_share_service.dart';
 import '../../core/utils/product_image.dart';
 import '../../core/utils/price_formatter.dart';
+import '../../core/widgets/app_loader.dart';
 import 'import_products_screen.dart';
 import 'product_detail_screen.dart';
 import 'product_form_screen.dart';
@@ -37,7 +38,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     final theme = Theme.of(context);
 
     return asyncProducts.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const AppLoader(),
       error: (error, _) {
         final isNetworkError = error.toString().contains('SocketException') ||
             error.toString().contains('ClientException') ||
@@ -120,7 +121,11 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           onRefresh: () async => ref.invalidate(productsListProvider),
           child: ListView(
             controller: _scrollCtrl,
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+            // 88 = nav bar (78) + marge ; + bottom safe-area pour les encoche bas
+            padding: EdgeInsets.fromLTRB(
+              16, 14, 16,
+              MediaQuery.of(context).padding.bottom + 88,
+            ),
             children: [
               _ProductsHero(
                 pendingCount: pendingCount,
@@ -219,6 +224,16 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                       onTap: () => _handleProductTap(context, product),
                       onLongPress: () => _toggleSelection(product.id),
                     ),
+                  ),
+                ),
+                // ── Pied de liste : total + retour en haut ──────────────
+                _ListFooter(
+                  totalCount: products.length,
+                  displayedCount: filtered.length,
+                  onScrollTop: () => _scrollCtrl.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 550),
+                    curve: Curves.easeOutCubic,
                   ),
                 ),
               ],
@@ -330,7 +345,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         SnackBar(
           content: Text(
             '${selectedProducts.length} image${selectedProducts.length > 1 ? 's' : ''} prepare${selectedProducts.length > 1 ? 's' : ''} pour un seul envoi WhatsApp.',
-          ),
+              textAlign: TextAlign.center,),
         ),
       );
       _clearSelection();
@@ -338,7 +353,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          content: Text(error.toString().replaceFirst('Exception: ', ''),
+              textAlign: TextAlign.center),
         ),
       );
     } finally {
@@ -810,6 +826,104 @@ class _EmptyProductsState extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Pied de liste ────────────────────────────────────────────────────────────
+
+class _ListFooter extends StatelessWidget {
+  const _ListFooter({
+    required this.totalCount,
+    required this.displayedCount,
+    required this.onScrollTop,
+  });
+
+  final int totalCount;
+  final int displayedCount;
+  final VoidCallback onScrollTop;
+
+  @override
+  Widget build(BuildContext context) {
+    final isFiltered = displayedCount < totalCount;
+    final label = isFiltered
+        ? '$displayedCount sur $totalCount produit${totalCount > 1 ? 's' : ''}'
+        : '$totalCount produit${totalCount > 1 ? 's' : ''} au total';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 8),
+      child: Column(
+        children: [
+          // ── Séparateur ─────────────────────────────────────────────────
+          Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.transparent,
+                  Color(0xFFD7E2F2),
+                  Color(0xFFD7E2F2),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Compteur total ─────────────────────────────────────────────
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF94A3B8),
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // ── Bouton retour en haut ──────────────────────────────────────
+          GestureDetector(
+            onTap: onScrollTop,
+            child: Column(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFD7E2F2)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF1565D8).withOpacity(0.12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.keyboard_arrow_up_rounded,
+                    color: Color(0xFF1565D8),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Retour en haut',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF94A3B8),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );

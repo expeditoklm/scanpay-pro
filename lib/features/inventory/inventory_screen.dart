@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/price_formatter.dart';
+import '../../core/widgets/app_loader.dart';
 import '../products/products_providers.dart';
 
 class InventoryScreen extends ConsumerWidget {
@@ -12,7 +13,7 @@ class InventoryScreen extends ConsumerWidget {
     final async = ref.watch(productsListProvider);
 
     return async.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const AppLoader(),
 
       // ── Erreur réseau : message propre + bouton réessayer ───────────────
       error: (e, _) {

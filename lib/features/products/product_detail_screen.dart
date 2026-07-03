@@ -89,7 +89,8 @@ class ProductDetailScreen extends ConsumerWidget {
                         );
                         if (updated == true && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Image produit mise a jour')),
+                            const SnackBar(content: Text('Image produit mise a jour',
+              textAlign: TextAlign.center)),
                           );
                         }
                       },
@@ -132,7 +133,8 @@ class ProductDetailScreen extends ConsumerWidget {
                   );
                   if (updated == true && context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Image produit ajoutee')),
+                      const SnackBar(content: Text('Image produit ajoutee',
+              textAlign: TextAlign.center)),
                     );
                   }
                 },
@@ -278,7 +280,8 @@ class ProductDetailScreen extends ConsumerWidget {
       if (!context.mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''),
+              textAlign: TextAlign.center)),
       );
     }
   }

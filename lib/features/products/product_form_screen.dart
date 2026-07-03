@@ -67,7 +67,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Camera refusee. Activez-la dans les parametres.'),
+          content: Text('Camera refusee. Activez-la dans les parametres.',
+              textAlign: TextAlign.center),
         ),
       );
       return;
@@ -85,7 +86,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Ce code-barres existe deja: $normalizedCode'),
+          content: Text('Ce code-barres existe deja: $normalizedCode',
+              textAlign: TextAlign.center),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -226,7 +228,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               syncedRemotely
                   ? 'Produit et image sauvegardes'
                   : 'Produit sauvegarde. Image en attente de synchronisation.',
-            ),
+              textAlign: TextAlign.center,),
           ),
         );
       }
@@ -243,7 +245,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             const SnackBar(
               content: Text(
                 'Produit enregistre hors connexion. Synchronisation automatique plus tard.',
-              ),
+              textAlign: TextAlign.center,),
               backgroundColor: Colors.orange,
               duration: Duration(seconds: 4),
             ),

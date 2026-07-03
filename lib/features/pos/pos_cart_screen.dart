@@ -41,11 +41,11 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
   bool _checkoutLoading = false;
   String? _error;
 
-  /// Affiche le dialogue de paiement et retourne (method, amountPaid)
+  /// Affiche le dialogue de paiement et retourne (method, amountPaid, mobileNumber)
   /// ou null si l'utilisateur annule.
-  Future<({String method, double amountPaid})?> _showPaymentDialog(
+  Future<({String method, double amountPaid, String mobileNumber})?> _showPaymentDialog(
       double total) async {
-    return showModalBottomSheet<({String method, double amountPaid})>(
+    return showModalBottomSheet<({String method, double amountPaid, String mobileNumber})>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -73,11 +73,16 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
     try {
       final invRepo = ref.read(invoicesRepositoryProvider);
       final id = const Uuid().v4();
+      // Méthode enrichie du numéro Mobile Money si renseigné
+      final enrichedMethod = payment.mobileNumber.trim().isNotEmpty
+          ? '${payment.method} (${payment.mobileNumber.trim()})'
+          : payment.method;
+
       final inv = await invRepo.recordSale(
         companyId: auth.companyId,
         invoiceId: id,
         lines: [for (final l in lines) (product: l.product, qty: l.quantity)],
-        paymentMethod: payment.method,
+        paymentMethod: enrichedMethod,
         amountPaid: payment.amountPaid,
       );
       if (inv == null) {
@@ -91,7 +96,8 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(printResult.message),
+          content: Text(printResult.message,
+              textAlign: TextAlign.center),
           backgroundColor: printResult.success ? Colors.green : Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
@@ -368,14 +374,54 @@ class _PosCartScreenState extends ConsumerState<PosCartScreen> {
 }
 
 // ─── Carte article du panier ──────────────────────────────────────────────────
-class _CartItemCard extends ConsumerWidget {
+class _CartItemCard extends ConsumerStatefulWidget {
   const _CartItemCard({required this.line});
   final CartLine line;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CartItemCard> createState() => _CartItemCardState();
+}
+
+class _CartItemCardState extends ConsumerState<_CartItemCard> {
+  late FixedExtentScrollController _qtyCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final drumMax = widget.line.product.stock.clamp(1, 999);
+    _qtyCtrl = FixedExtentScrollController(
+      initialItem: (widget.line.quantity - 1).clamp(0, drumMax - 1),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_CartItemCard old) {
+    super.didUpdateWidget(old);
+    if (old.line.quantity != widget.line.quantity && _qtyCtrl.hasClients) {
+      final drumMax = widget.line.product.stock.clamp(1, 999);
+      final target = (widget.line.quantity - 1).clamp(0, drumMax - 1);
+      if (_qtyCtrl.selectedItem != target) {
+        _qtyCtrl.animateToItem(
+          target,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final line = widget.line;
     final product = line.product;
-    final atMax = line.quantity >= product.stock;
+    final drumMax = product.stock.clamp(1, 999);
+    final atMax   = line.quantity >= product.stock;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -392,6 +438,7 @@ class _CartItemCard extends ConsumerWidget {
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // ── Image ───────────────────────────────────────────────────
           ClipRRect(
@@ -461,89 +508,248 @@ class _CartItemCard extends ConsumerWidget {
 
           const SizedBox(width: 10),
 
-          // ── Stepper quantité ───────────────────────────────────────
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Bouton −
-                GestureDetector(
-                  onTap: () => ref
-                      .read(cartProvider.notifier)
-                      .setQuantity(product.id, line.quantity - 1),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
+          // ── Roue quantité [ − | drum | + ] ───────────────────────
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _kBorder),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+
+                  // ── Bouton − (trash si qty = 1) ─────────────────
+                  GestureDetector(
+                    onTap: () => ref
+                        .read(cartProvider.notifier)
+                        .setQuantity(product.id, line.quantity - 1),
+                    child: Container(
+                      width: 34,
+                      height: _QuantityDrum._itemH * 3,
                       color: line.quantity <= 1
-                          ? Colors.red.withOpacity(0.08)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
+                          ? Colors.red.withOpacity(0.05)
+                          : const Color(0xFFF8FAFC),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        line.quantity <= 1
+                            ? Icons.delete_outline_rounded
+                            : Icons.remove_rounded,
+                        size: 16,
                         color: line.quantity <= 1
-                            ? Colors.red.withOpacity(0.20)
-                            : _kBorder,
+                            ? Colors.red
+                            : const Color(0xFF475569),
                       ),
                     ),
-                    child: Icon(
-                      line.quantity <= 1
-                          ? Icons.delete_outline_rounded
-                          : Icons.remove_rounded,
-                      size: 16,
-                      color: line.quantity <= 1
-                          ? Colors.red
-                          : const Color(0xFF475569),
+                  ),
+
+                  // Séparateur gauche
+                  Container(
+                    width: 1,
+                    height: _QuantityDrum._itemH * 3,
+                    color: _kBorder,
+                  ),
+
+                  // ── Roue centrale ────────────────────────────────
+                  _QuantityDrum(
+                    controller: _qtyCtrl,
+                    max: drumMax,
+                    initialItem: (line.quantity - 1).clamp(0, drumMax - 1),
+                    onChanged: (qty) => ref
+                        .read(cartProvider.notifier)
+                        .setQuantity(product.id, qty),
+                  ),
+
+                  // Séparateur droit
+                  Container(
+                    width: 1,
+                    height: _QuantityDrum._itemH * 3,
+                    color: _kBorder,
+                  ),
+
+                  // ── Bouton + ─────────────────────────────────────
+                  GestureDetector(
+                    onTap: atMax
+                        ? null
+                        : () => ref
+                            .read(cartProvider.notifier)
+                            .setQuantity(product.id, line.quantity + 1),
+                    child: Container(
+                      width: 34,
+                      height: _QuantityDrum._itemH * 3,
+                      decoration: BoxDecoration(
+                        gradient: atMax
+                            ? null
+                            : const LinearGradient(
+                                colors: [_kBlue1, _kTeal],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                        color: atMax ? const Color(0xFFF8FAFC) : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.add_rounded,
+                        size: 16,
+                        color: atMax
+                            ? const Color(0xFF94A3B8)
+                            : Colors.white,
+                      ),
                     ),
                   ),
-                ),
-                // Quantité
-                SizedBox(
-                  width: 32,
+
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Roue de sélection de quantité (style iOS) ────────────────────────────────
+class _QuantityDrum extends StatefulWidget {
+  const _QuantityDrum({
+    required this.controller,
+    required this.max,
+    required this.initialItem,
+    required this.onChanged,
+  });
+
+  final FixedExtentScrollController controller;
+  final int max;
+  final int initialItem;
+  final ValueChanged<int> onChanged;
+
+  static const double _itemH = 28.0;
+
+  @override
+  State<_QuantityDrum> createState() => _QuantityDrumState();
+}
+
+class _QuantityDrumState extends State<_QuantityDrum> {
+  late int _selectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialItem;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const itemH = _QuantityDrum._itemH;
+
+    return SizedBox(
+      width: 46,
+      height: itemH * 3,
+      child: Stack(
+        children: [
+          // ── Roue principale ─────────────────────────────────────────
+          ListWheelScrollView.useDelegate(
+            controller: widget.controller,
+            itemExtent: itemH,
+            physics: const FixedExtentScrollPhysics(),
+            diameterRatio: 1.4,
+            perspective: 0.003,
+            onSelectedItemChanged: (i) {
+              setState(() => _selectedIndex = i);
+              widget.onChanged(i + 1);
+            },
+            childDelegate: ListWheelChildBuilderDelegate(
+              childCount: widget.max,
+              builder: (_, i) {
+                final isSelected = i == _selectedIndex;
+                return Center(
                   child: Text(
-                    '${line.quantity}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                      color: Color(0xFF0F172A),
+                    '${i + 1}',
+                    style: TextStyle(
+                      fontSize: isSelected ? 17 : 12,
+                      fontWeight:
+                          isSelected ? FontWeight.w900 : FontWeight.w500,
+                      color: isSelected
+                          ? const Color(0xFF0F172A)
+                          : const Color(0xFFB0BEC5),
                     ),
                   ),
-                ),
-                // Bouton +
-                GestureDetector(
-                  onTap: atMax
-                      ? null
-                      : () => ref
-                          .read(cartProvider.notifier)
-                          .setQuantity(product.id, line.quantity + 1),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      gradient: atMax
-                          ? null
-                          : const LinearGradient(
-                              colors: [_kBlue1, _kTeal],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                      color: atMax ? const Color(0xFFE2E8F0) : null,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.add_rounded,
-                      size: 16,
-                      color: atMax
-                          ? const Color(0xFF94A3B8)
-                          : Colors.white,
-                    ),
+                );
+              },
+            ),
+          ),
+
+          // ── Fondu haut ───────────────────────────────────────────────
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: itemH,
+            child: IgnorePointer(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.white, Colors.transparent],
                   ),
                 ),
-              ],
+              ),
+            ),
+          ),
+
+          // ── Fondu bas ────────────────────────────────────────────────
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: itemH,
+            child: IgnorePointer(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.white],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // ── Teinte de sélection ──────────────────────────────────────
+          Positioned(
+            top: itemH,
+            left: 0,
+            right: 0,
+            height: itemH,
+            child: IgnorePointer(
+              child: Container(
+                color: const Color(0xFF1565D8).withOpacity(0.04),
+              ),
+            ),
+          ),
+
+          // ── Ligne iOS haut ───────────────────────────────────────────
+          Positioned(
+            top: itemH - 0.5,
+            left: 6,
+            right: 6,
+            height: 0.8,
+            child: IgnorePointer(
+              child: Container(color: const Color(0xFFD7E2F2)),
+            ),
+          ),
+
+          // ── Ligne iOS bas ────────────────────────────────────────────
+          Positioned(
+            top: itemH * 2,
+            left: 6,
+            right: 6,
+            height: 0.8,
+            child: IgnorePointer(
+              child: Container(color: const Color(0xFFD7E2F2)),
             ),
           ),
         ],
@@ -607,8 +813,10 @@ class _PaymentSheet extends StatefulWidget {
 
 class _PaymentSheetState extends State<_PaymentSheet> {
   String _method = 'Espece';
-  final _ctrl = TextEditingController();
-  double _amountPaid = 0;
+  final _ctrl       = TextEditingController();
+  final _mobileCtrl = TextEditingController();
+  double _amountPaid  = 0;
+  String _mobileNumber = '';
 
   double get _change =>
       _amountPaid > widget.total ? _amountPaid - widget.total : 0;
@@ -616,6 +824,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
   @override
   void dispose() {
     _ctrl.dispose();
+    _mobileCtrl.dispose();
     super.dispose();
   }
 
@@ -672,7 +881,11 @@ class _PaymentSheetState extends State<_PaymentSheet> {
                 label: 'Espèce',
                 icon: Icons.payments_outlined,
                 selected: _method == 'Espece',
-                onTap: () => setState(() => _method = 'Espece'),
+                // ── Fix : resync _amountPaid depuis le champ texte ──────
+                onTap: () => setState(() {
+                  _method = 'Espece';
+                  _amountPaid = double.tryParse(_ctrl.text) ?? 0;
+                }),
               ),
               const SizedBox(width: 10),
               _MethodBtn(
@@ -697,6 +910,38 @@ class _PaymentSheetState extends State<_PaymentSheet> {
             ],
           ),
           const SizedBox(height: 16),
+
+          // ── Numéro Mobile Money ──────────────────────────────────────
+          if (_method == 'Mobile Money') ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _mobileCtrl,
+              keyboardType: TextInputType.phone,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Numéro Mobile Money',
+                hintText: '97 00 00 00',
+                prefixText: '+229 ',
+                prefixIcon: const Icon(
+                  Icons.phone_android_rounded,
+                  size: 20,
+                  color: _kBlue1,
+                ),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFD7E2F2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: _kBlue1, width: 1.5),
+                ),
+              ),
+              onChanged: (v) => setState(() => _mobileNumber = v),
+            ),
+            const SizedBox(height: 8),
+          ],
 
           // Champ montant reçu (Espèce seulement)
           if (_method == 'Espece') ...[
@@ -788,9 +1033,11 @@ class _PaymentSheetState extends State<_PaymentSheet> {
                   final paid = _method == 'Espece'
                       ? (_amountPaid > 0 ? _amountPaid : widget.total)
                       : widget.total;
-                  Navigator.of(context).pop(
-                    (method: _method, amountPaid: paid),
-                  );
+                  Navigator.of(context).pop((
+                    method: _method,
+                    amountPaid: paid,
+                    mobileNumber: _mobileNumber,
+                  ));
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,

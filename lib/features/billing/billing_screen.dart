@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
+import '../../core/widgets/app_loader.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
@@ -66,7 +68,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final asyncInvoices = ref.watch(invoicesListProvider);
 
     return asyncInvoices.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const AppLoader(),
       error: (error, _) => Center(child: Text('Erreur: $error')),
       data: (invoices) {
         if (invoices.isEmpty) {
@@ -427,14 +429,16 @@ class _InvoiceCard extends StatelessWidget {
   Future<void> _reprint(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
-      const SnackBar(content: Text('Impression du recu en cours...')),
+      const SnackBar(content: Text('Impression du recu en cours...',
+              textAlign: TextAlign.center)),
     );
     final result = await const XPrinterService().printSavedInvoice(invoice);
     if (!context.mounted) return;
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text(result.message),
+        content: Text(result.message,
+              textAlign: TextAlign.center),
         backgroundColor:
             result.success ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
       ),
