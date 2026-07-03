@@ -920,7 +920,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
               autofocus: true,
               decoration: InputDecoration(
                 labelText: 'Numéro Mobile Money',
-                hintText: '97 00 00 00',
+                hintText: '01 97 00 00 00',
                 prefixText: '+229 ',
                 prefixIcon: const Icon(
                   Icons.phone_android_rounded,

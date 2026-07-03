@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/config/erp_config.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/exit_guard.dart';
+import '../../core/widgets/shimmer_box.dart';
 import '../../data/offline_sync_service.dart';
 import '../auth/auth_provider.dart';
 import '../billing/billing_screen.dart';
@@ -209,35 +210,74 @@ class _HomeShellState extends ConsumerState<HomeShell>
         extendBody: true,
         appBar: AppBar(
           titleSpacing: 0,
-          leadingWidth: 76,
-          leading: Padding(
-            padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+          leadingWidth: 72,
+          leading: Center(
+            child: Padding(
+            padding: const EdgeInsets.only(left: 16),
             child: GestureDetector(
               onTap: _showCompanyProfile,
               child: Container(
-                padding: const EdgeInsets.all(2.5),
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+                width: 38,
+                height: 38,
+                  padding: const EdgeInsets.all(2.5),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                   ),
-                ),
-                child: CircleAvatar(
-                  backgroundColor: Colors.white,
-                  foregroundImage: absoluteLogoUrl != null
-                      ? NetworkImage(absoluteLogoUrl)
-                      : null,
-                  child: absoluteLogoUrl == null
-                      ? Text(
-                          initials.isEmpty ? 'BT' : initials,
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: const Color(0xFF1565D8),
-                                fontWeight: FontWeight.w700,
+                  child: ClipOval(
+                    child: Container(
+                      color: Colors.white,
+                      child: absoluteLogoUrl != null
+                          ? Image.network(
+                              absoluteLogoUrl,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null
+                                      ? child
+                                      : const ShimmerBox(),
+                              frameBuilder: (_, child, frame,
+                                  wasSynchronouslyLoaded) {
+                                if (wasSynchronouslyLoaded || frame != null) {
+                                  return child;
+                                }
+                                return AnimatedOpacity(
+                                  opacity: frame == null ? 0.0 : 1.0,
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeOut,
+                                  child: child,
+                                );
+                              },
+                              errorBuilder: (_, __, ___) => Center(
+                                child: Text(
+                                  initials.isEmpty ? 'BT' : initials,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(
+                                        color: const Color(0xFF1565D8),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
                               ),
-                        )
-                      : null,
+                            )
+                          : Center(
+                              child: Text(
+                                initials.isEmpty ? 'BT' : initials,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(
+                                      color: const Color(0xFF1565D8),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -661,21 +701,51 @@ class _ProfileSheetState extends State<_ProfileSheet>
                       end: Alignment.bottomRight,
                     ),
                   ),
-                  child: CircleAvatar(
-                    backgroundColor: const Color(0xFFEFF6FF),
-                    foregroundImage: widget.absoluteLogoUrl != null
-                        ? NetworkImage(widget.absoluteLogoUrl!)
-                        : null,
-                    child: widget.absoluteLogoUrl == null
-                        ? Text(
-                            widget.initials,
-                            style: const TextStyle(
-                              color: Color(0xFF1565D8),
-                              fontWeight: FontWeight.w800,
-                              fontSize: 20,
+                  child: ClipOval(
+                    child: Container(
+                      color: const Color(0xFFEFF6FF),
+                      child: widget.absoluteLogoUrl != null
+                          ? Image.network(
+                              widget.absoluteLogoUrl!,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null
+                                      ? child
+                                      : const ShimmerBox(),
+                              frameBuilder: (_, child, frame,
+                                  wasSynchronouslyLoaded) {
+                                if (wasSynchronouslyLoaded || frame != null) {
+                                  return child;
+                                }
+                                return AnimatedOpacity(
+                                  opacity: frame == null ? 0.0 : 1.0,
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeOut,
+                                  child: child,
+                                );
+                              },
+                              errorBuilder: (_, __, ___) => Center(
+                                child: Text(
+                                  widget.initials,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1565D8),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 20,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Center(
+                              child: Text(
+                                widget.initials,
+                                style: const TextStyle(
+                                  color: Color(0xFF1565D8),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 20,
+                                ),
+                              ),
                             ),
-                          )
-                        : null,
+                    ),
                   ),
                 ),
               ),

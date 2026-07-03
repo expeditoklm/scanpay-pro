@@ -11,6 +11,7 @@ import '../../core/models/product.dart';
 import '../../core/utils/product_image.dart';
 import '../../core/utils/price_formatter.dart';
 import '../../core/utils/qr_hmac.dart';
+import '../../core/widgets/app_loader.dart';
 import '../auth/auth_provider.dart';
 import '../auth/auth_state.dart';
 import 'product_codes_pdf.dart';
@@ -41,202 +42,332 @@ class ProductDetailScreen extends ConsumerWidget {
     final previewQrData = encodeQrJson(previewPayload);
 
     return Scaffold(
-      appBar: AppBar(title: Text(product.name)),
+      // ── AppBar gradient ─────────────────────────────────────────────────
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1565D8),
+        iconTheme: const IconThemeData(color: Colors.white),
+        centerTitle: false,
+        elevation: 0,
+        title: Text(
+          product.name,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 17,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF1565D8), Color(0xFF22C1C3)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              formatPriceEuro(product.price),
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Stock : ${product.stock}',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            if ((product.referenceImagePath ?? '').isNotEmpty ||
-                (product.referenceImageUrl ?? '').isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Stack(
+
+            // ── Bandeau prix / stock ────────────────────────────────────────
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF0D47A1), Color(0xFF1565D8), Color(0xFF22C1C3)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              child: Row(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: AspectRatio(
-                      aspectRatio: 4 / 3,
-                      child: buildProductImage(
-                        product: product,
-                        fit: BoxFit.cover,
-                        fallback: Container(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          child: const Center(
-                            child: Icon(Icons.image_not_supported_outlined, size: 42),
+                  _InfoPill(
+                    icon: Icons.sell_rounded,
+                    label: formatPriceEuro(product.price),
+                  ),
+                  const SizedBox(width: 10),
+                  _InfoPill(
+                    icon: Icons.inventory_2_rounded,
+                    label: '${product.stock} en stock',
+                    tint: product.stock <= 3
+                        ? const Color(0xFFFFC37A)
+                        : const Color(0xFFB4F0F0),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Corps ───────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+
+                  // ── Image produit ────────────────────────────────────────
+                  if ((product.referenceImagePath ?? '').isNotEmpty ||
+                      (product.referenceImageUrl ?? '').isNotEmpty) ...[
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: AspectRatio(
+                            aspectRatio: 4 / 3,
+                            child: buildProductImage(
+                              product: product,
+                              fit: BoxFit.cover,
+                              fallback: Container(
+                                color: const Color(0xFFF1F5F9),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.image_not_supported_outlined,
+                                    size: 42,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        Positioned(
+                          top: 12,
+                          right: 12,
+                          child: _EditImageButton(
+                            onTap: () async {
+                              final updated =
+                                  await Navigator.of(context).push<bool>(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ProductImageEditScreen(product: product),
+                                ),
+                              );
+                              if (updated == true && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Image produit mise à jour',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: GestureDetector(
+                  ] else ...[
+                    GestureDetector(
                       onTap: () async {
                         final updated = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
-                            builder: (_) => ProductImageEditScreen(product: product),
+                            builder: (_) =>
+                                ProductImageEditScreen(product: product),
                           ),
                         );
                         if (updated == true && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Image produit mise a jour',
-              textAlign: TextAlign.center)),
+                            const SnackBar(
+                              content: Text(
+                                'Image produit ajoutée',
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
                           );
                         }
                       },
                       child: Container(
-                        width: 36,
-                        height: 36,
+                        height: 130,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFD7E2F2)),
+                        ),
+                        child: const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.add_a_photo_outlined,
+                                size: 32,
+                                color: Color(0xFF94A3B8),
+                              ),
+                              SizedBox(height: 10),
+                              Text(
+                                'Ajouter une image',
+                                style: TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 28),
+
+                  // ── QR header ──────────────────────────────────────────────
+                  Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          shape: BoxShape.circle,
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x441565D8),
-                              blurRadius: 10,
-                              offset: Offset(0, 4),
-                            ),
-                          ],
+                          borderRadius: BorderRadius.circular(13),
                         ),
                         child: const Icon(
-                          Icons.edit_rounded,
+                          Icons.qr_code_2_rounded,
                           color: Colors.white,
-                          size: 16,
+                          size: 20,
                         ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'QR de vente et de provenance',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Scannez pour authentifier le produit',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── QR card ────────────────────────────────────────────────
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFFD7E2F2)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x120F172A),
+                            blurRadius: 24,
+                            offset: Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          QrImageView(
+                            data: previewQrData,
+                            version: QrVersions.auto,
+                            size: 200,
+                            backgroundColor: Colors.white,
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+                              ),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: const Text(
+                              'QuickSellPay — QR Authentique',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  const Text(
+                    'Le QR imprimé pour les étiquettes ouvre la plateforme publique et reste lisible par l\'APK pour la vente.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  // ── Bouton génération QR ─────────────────────────────────
+                  GestureDetector(
+                    onTap: () => _openQrSheetFlow(context, ref, auth),
+                    child: Container(
+                      height: 54,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF0D47A1),
+                            Color(0xFF1565D8),
+                            Color(0xFF22C1C3),
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF1565D8).withOpacity(0.30),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.picture_as_pdf_outlined,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Générer des QR en PDF A4',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ],
               ),
-            ] else ...[
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: () async {
-                  final updated = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
-                      builder: (_) => ProductImageEditScreen(product: product),
-                    ),
-                  );
-                  if (updated == true && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Image produit ajoutee',
-              textAlign: TextAlign.center)),
-                    );
-                  }
-                },
-                child: Container(
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFD7E2F2),
-                      style: BorderStyle.solid,
-                    ),
-                  ),
-                  child: const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.add_a_photo_outlined,
-                          size: 30,
-                          color: Color(0xFF94A3B8),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Ajouter une image',
-                          style: TextStyle(
-                            color: Color(0xFF64748B),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 24),
-            Text(
-              'QR de vente et de provenance',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFD7E2F2)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x120F172A),
-                      blurRadius: 24,
-                      offset: Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    QrImageView(
-                      data: previewQrData,
-                      version: QrVersions.auto,
-                      size: 220,
-                      backgroundColor: Colors.white,
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
-                        ),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: const Text(
-                        'QuickSellPay — QR Authentique',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Le QR imprime pour les etiquettes ouvre la plateforme publique hors APK et reste lisible par l APK pour la vente.',
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: () => _openQrSheetFlow(context, ref, auth),
-              icon: const Icon(Icons.picture_as_pdf_outlined),
-              label: const Text('Generer des QR en PDF A4'),
             ),
           ],
         ),
@@ -255,7 +386,7 @@ class ProductDetailScreen extends ConsumerWidget {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      builder: (_) => const Center(child: AppLoader()),
     );
 
     try {
@@ -280,8 +411,12 @@ class ProductDetailScreen extends ConsumerWidget {
       if (!context.mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''),
-              textAlign: TextAlign.center)),
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Exception: ', ''),
+            textAlign: TextAlign.center,
+          ),
+        ),
       );
     }
   }
@@ -311,12 +446,12 @@ class ProductDetailScreen extends ConsumerWidget {
     final decoded = jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map<String, dynamic>
-          ? decoded['detail']?.toString() ?? 'Generation impossible'
-          : 'Generation impossible';
+          ? decoded['detail']?.toString() ?? 'Génération impossible'
+          : 'Génération impossible';
       throw Exception(detail);
     }
     if (decoded is! List) {
-      throw Exception('Reponse de generation invalide');
+      throw Exception('Réponse de génération invalide');
     }
 
     return decoded.map<ProductQrSheetEntry>((item) {
@@ -345,7 +480,88 @@ class ProductDetailScreen extends ConsumerWidget {
   }
 }
 
+// ─── Pill d'info dans le header ───────────────────────────────────────────────
+
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({
+    required this.icon,
+    required this.label,
+    this.tint = Colors.white,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: tint, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: tint,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Bouton d'édition de l'image ─────────────────────────────────────────────
+
+class _EditImageButton extends StatelessWidget {
+  const _EditImageButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1565D8), Color(0xFF22C1C3)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          shape: BoxShape.circle,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x441565D8),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.edit_rounded,
+          color: Colors.white,
+          size: 17,
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Bottom sheet : saisie quantité QR ───────────────────────────────────────
+
 class _QrQuantitySheet extends StatelessWidget {
   const _QrQuantitySheet({required this.controller});
   final TextEditingController controller;
@@ -369,7 +585,7 @@ class _QrQuantitySheet extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
 
-              // ── Header dégradé ──────────────────────────────────────
+              // ── Header dégradé ──────────────────────────────────────────
               Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
@@ -381,7 +597,6 @@ class _QrQuantitySheet extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
                 child: Column(
                   children: [
-                    // Pill
                     Center(
                       child: Container(
                         width: 38,
@@ -402,15 +617,18 @@ class _QrQuantitySheet extends StatelessWidget {
                             color: Colors.white.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          child: const Icon(Icons.qr_code_2_rounded,
-                              color: Colors.white, size: 24),
+                          child: const Icon(
+                            Icons.qr_code_2_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         const Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Generer des QR codes',
+                              'Générer des QR codes',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
@@ -418,9 +636,8 @@ class _QrQuantitySheet extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              'Choisissez la quantite a imprimer',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 12),
+                              'Choisissez la quantité à imprimer',
+                              style: TextStyle(color: Colors.white70, fontSize: 12),
                             ),
                           ],
                         ),
@@ -430,13 +647,12 @@ class _QrQuantitySheet extends StatelessWidget {
                 ),
               ),
 
-              // ── Corps ───────────────────────────────────────────────
+              // ── Corps ────────────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Champ quantité
                     TextField(
                       controller: controller,
                       keyboardType: TextInputType.number,
@@ -449,32 +665,35 @@ class _QrQuantitySheet extends StatelessWidget {
                         letterSpacing: 2,
                       ),
                       decoration: InputDecoration(
-                        labelText: 'Quantite',
+                        labelText: 'Quantité',
                         labelStyle: const TextStyle(
-                            color: Color(0xFF64748B), fontSize: 13),
+                          color: Color(0xFF64748B),
+                          fontSize: 13,
+                        ),
                         filled: true,
                         fillColor: const Color(0xFFE8F0FE),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                              color: _kBlue1.withOpacity(0.2)),
+                          borderSide:
+                              BorderSide(color: _kBlue1.withOpacity(0.2)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                              color: _kBlue1, width: 1.5),
+                          borderSide:
+                              const BorderSide(color: _kBlue1, width: 1.5),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 18),
+                          horizontal: 16,
+                          vertical: 18,
+                        ),
                       ),
                     ),
-
                     const SizedBox(height: 10),
                     const Text(
-                      'Chaque QR code est unique et signe cryptographiquement.',
+                      'Chaque QR code est unique et signé cryptographiquement.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 11.5, color: Color(0xFF94A3B8)),
+                      style:
+                          TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
                     ),
                     const SizedBox(height: 22),
 
@@ -486,17 +705,17 @@ class _QrQuantitySheet extends StatelessWidget {
                             onPressed: () => Navigator.of(context).pop(),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF64748B),
-                              side: const BorderSide(
-                                  color: Color(0xFFCBD5E1)),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 14),
+                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                            child: const Text('Annuler',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w600)),
+                            child: const Text(
+                              'Annuler',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -504,8 +723,8 @@ class _QrQuantitySheet extends StatelessWidget {
                           flex: 2,
                           child: GestureDetector(
                             onTap: () {
-                              final qty = int.tryParse(
-                                  controller.text.trim());
+                              final qty =
+                                  int.tryParse(controller.text.trim());
                               Navigator.of(context).pop(qty);
                             },
                             child: Container(
@@ -527,14 +746,16 @@ class _QrQuantitySheet extends StatelessWidget {
                               ),
                               alignment: Alignment.center,
                               child: const Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.center,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.qr_code_rounded,
-                                      color: Colors.white, size: 18),
+                                  Icon(
+                                    Icons.qr_code_rounded,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
                                   SizedBox(width: 8),
                                   Text(
-                                    'Generer',
+                                    'Générer',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
