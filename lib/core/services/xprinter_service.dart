@@ -768,6 +768,22 @@ class XPrinterService {
       ..._lf,
       ..._text('QuickSellPay'),
       ..._lf,
+      if ((invoice.companyAddress ?? '').trim().isNotEmpty) ...[
+        ..._text(_clean(invoice.companyAddress!.trim())),
+        ..._lf,
+      ],
+      if ((invoice.companyPhone ?? '').trim().isNotEmpty) ...[
+        ..._text('Tel : ${_clean(invoice.companyPhone!.trim())}'),
+        ..._lf,
+      ],
+      if ((invoice.companyIfu ?? '').trim().isNotEmpty) ...[
+        ..._text('IFU : ${_clean(invoice.companyIfu!.trim())}'),
+        ..._lf,
+      ],
+      if ((invoice.companyRc ?? '').trim().isNotEmpty) ...[
+        ..._text('RCCM : ${_clean(invoice.companyRc!.trim())}'),
+        ..._lf,
+      ],
       ..._text(date),
       ..._lf,
       ..._alignLeft,
