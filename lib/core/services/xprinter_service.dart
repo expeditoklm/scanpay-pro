@@ -375,6 +375,8 @@ class XPrinterService {
       ..._lf,
       ..._normalText,
       ..._boldOff,
+      ..._text(invoice.isVatRegistered ? 'FACTURE NORMALISEE' : 'FACTURE PROFORMA'),
+      ..._lf,
       ..._text('QuickSellPay'),
       ..._lf,
       ..._text(date),

@@ -22,6 +22,36 @@ class InvoicesRepository {
   final OfflineStorage _offlineStorage = OfflineStorage();
   final MecefService _mecef = MecefService();
 
+  Future<InvoicesPage> listPage({
+    required String companyId,
+    required int page,
+    int perPage = 20,
+  }) async {
+    final auth = ref.read(authProvider);
+    if (auth == null) return const InvoicesPage(items: [], page: 1, total: 0, totalPages: 1);
+    final safePage = page < 1 ? 1 : page;
+    final uri = Uri.parse('$kErpBaseUrl/api/sales').replace(queryParameters: {
+      'page': '$safePage',
+      'per_page': '$perPage',
+    });
+    final response = await _getWithRetry(uri);
+    if (response.statusCode != 200) throw Exception('ERP HTTP ${response.statusCode}');
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final items = (data['items'] as List<dynamic>? ?? const [])
+        .map((item) => _fromSaleJson(
+              item as Map<String, dynamic>,
+              companyId: companyId,
+              companyName: auth.companyName,
+            ))
+        .toList();
+    return InvoicesPage(
+      items: items,
+      page: (data['page'] as num?)?.toInt() ?? safePage,
+      total: (data['total'] as num?)?.toInt() ?? items.length,
+      totalPages: (data['total_pages'] as num?)?.toInt() ?? 1,
+    );
+  }
+
   Map<String, String> get _headers {
     final auth = ref.read(authProvider);
     if (auth == null) {
@@ -107,7 +137,17 @@ class InvoicesRepository {
     String paymentMethod = 'Espece',
     double amountPaid = 0,
   }) async {
-    final auth = ref.read(authProvider);
+    // Relit le profil avant la vente : une modification du régime TVA dans
+    // la boutique doit s'appliquer immédiatement aux nouveaux tickets.
+    var auth = ref.read(authProvider);
+    if (auth != null) {
+      await ref.read(authProvider.notifier).refreshIfNeeded();
+      // Variable séparée : évite que la promotion de null-safety impose
+      // à Riverpod un provider non-nullable au moment de la relecture.
+      final refreshedAuth = ref.read(authProvider);
+      if (refreshedAuth == null) return null;
+      auth = refreshedAuth;
+    }
     if (auth == null) return null;
 
     final payload = {
@@ -146,28 +186,29 @@ class InvoicesRepository {
         amountPaid: amountPaid,
       );
 
-      // Certification e-MECeF (DGI Benin)
-      // Bascule automatiquement en mode reel si l'IFU et le token DGI
-      // sont configures dans le compte (enregistres a l'inscription etape 3).
-      // Mode mock local utilise si les cles sont absentes.
-      final mecefConfig = auth.hasMecefCredentials
-          ? MecefConfig(ifu: auth.companyIfu!, token: auth.mecefToken!)
-          : MecefConfig.placeholder;
-      final mecefResult = await _mecef.certifyInvoice(
-        invoice,
-        config: mecefConfig,
-      );
-      if (mecefResult.success) {
-        invoice = invoice.copyWith(
-          mecefCU: mecefResult.cu,
-          mecefQrBase64: mecefResult.qrBase64,
-          mecefDatetime: mecefResult.datetime,
-          mecefStatus: mecefResult.status,
-          mecefNim: mecefResult.nim,
-          mecefCompteur: mecefResult.compteur,
+      // Une boutique non assujettie n'émet pas de facture normalisée :
+      // aucune TVA, aucune certification MECeF et aucun QR fiscal.
+      if (auth.isVatRegistered) {
+        // Certification e-MECeF (DGI Benin) pour les boutiques assujetties.
+        final mecefConfig = auth.hasMecefCredentials
+            ? MecefConfig(ifu: auth.companyIfu!, token: auth.mecefToken!)
+            : MecefConfig.placeholder;
+        final mecefResult = await _mecef.certifyInvoice(
+          invoice,
+          config: mecefConfig,
         );
-      } else {
-        invoice = invoice.copyWith(mecefStatus: MecefStatus.pending);
+        if (mecefResult.success) {
+          invoice = invoice.copyWith(
+            mecefCU: mecefResult.cu,
+            mecefQrBase64: mecefResult.qrBase64,
+            mecefDatetime: mecefResult.datetime,
+            mecefStatus: mecefResult.status,
+            mecefNim: mecefResult.nim,
+            mecefCompteur: mecefResult.compteur,
+          );
+        } else {
+          invoice = invoice.copyWith(mecefStatus: MecefStatus.pending);
+        }
       }
 
       final existing = List<Invoice>.from(_cache[companyId] ?? const []);
@@ -374,4 +415,18 @@ class InvoicesRepository {
       }).toList(),
     );
   }
+}
+
+class InvoicesPage {
+  const InvoicesPage({
+    required this.items,
+    required this.page,
+    required this.total,
+    required this.totalPages,
+  });
+
+  final List<Invoice> items;
+  final int page;
+  final int total;
+  final int totalPages;
 }

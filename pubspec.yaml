@@ -31,6 +31,7 @@ dependencies:
   csv: ^8.0.0
   file_picker: ^8.1.2
   excel: ^4.0.6
+  archive: ^3.6.1
   connectivity_plus: ^6.1.1
   vibration: ^3.1.8
   app_settings: ^7.0.0

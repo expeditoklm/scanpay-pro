@@ -1,32 +1,28 @@
 import '../core/models/product.dart';
 
-class ProductsCursor {
-  const ProductsCursor({
-    required this.name,
-    required this.id,
-  });
-
-  final String name;
-  final String id;
-}
-
 class ProductsPage {
   const ProductsPage({
     required this.items,
-    required this.nextCursor,
+    required this.page,
+    required this.perPage,
+    required this.total,
+    required this.totalPages,
   });
 
   final List<Product> items;
-  final ProductsCursor? nextCursor;
+  final int page;
+  final int perPage;
+  final int total;
+  final int totalPages;
 }
 
 abstract class ProductsRepository {
   Future<List<Product>> listProducts(String companyId);
   Future<ProductsPage> listProductsPage({
     required String companyId,
-    required int limit,
-    String? startAfterName,
-    String? startAfterId,
+    required int page,
+    required int perPage,
+    String query = '',
   });
   Future<Product?> getById(String companyId, String productId);
   Future<Product?> getBySku(String companyId, String sku);

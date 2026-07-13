@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +8,9 @@ import '../../core/models/product.dart';
 import '../../core/utils/csv_products_parser.dart';
 import '../../core/utils/plan_quota.dart';
 import '../../core/utils/spreadsheet_products_parser.dart';
+import '../../core/utils/zip_products_import_parser.dart';
 import '../../data/offline_storage.dart';
+import '../../data/product_extras_repository.dart';
 import '../../data/repository_providers.dart';
 import '../auth/auth_provider.dart';
 import 'products_providers.dart';
@@ -33,6 +37,7 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
   int _imported = 0;
   int _skippedDuplicate = 0;
   int _skippedQuota = 0;
+  int _importedImages = 0;
 
   Future<void> _pickAndImport() async {
     final auth = ref.read(authProvider);
@@ -44,12 +49,13 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
       _imported = 0;
       _skippedDuplicate = 0;
       _skippedQuota = 0;
+      _importedImages = 0;
     });
 
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const ['csv', 'xlsx'],
+        allowedExtensions: const ['csv', 'xlsx', 'zip'],
         withData: true,
       );
       if (result == null || result.files.isEmpty) return;
@@ -62,10 +68,12 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
       }
 
       final extension = (file.extension ?? '').toLowerCase();
-      final parsed = extension == 'xlsx'
-          ? parseProductsSpreadsheetBytes(
-              bytes: bytes, companyId: auth.companyId)
-          : parseProductsCsvBytes(bytes: bytes, companyId: auth.companyId);
+      final parsed = extension == 'zip'
+          ? await parseProductsZipBytes(bytes: bytes, companyId: auth.companyId)
+          : extension == 'xlsx'
+              ? parseProductsSpreadsheetBytes(
+                  bytes: bytes, companyId: auth.companyId)
+              : parseProductsCsvBytes(bytes: bytes, companyId: auth.companyId);
 
       final parseErrors = List<String>.from(parsed.errors);
       if (parsed.products.isEmpty) {
@@ -139,11 +147,56 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
         return;
       }
 
-      await repo.bulkUpsert(auth.companyId, toImport);
+      final erpRepo = ref.read(erpProductsRepositoryProvider);
+      final extrasRepo = ref.read(productExtrasRepositoryProvider);
+      final imageService = ref.read(productImageServiceProvider);
+      var importedImages = 0;
+      for (final product in toImport) {
+        final saved = await repo.upsert(product);
+        final imagePath = product.referenceImagePath;
+        if (imagePath == null || imagePath.isEmpty || !File(imagePath).existsSync()) {
+          continue;
+        }
+
+        final persisted = await imageService.persistReferenceImage(
+          companyId: auth.companyId,
+          productId: saved.id,
+          sourcePath: imagePath,
+        );
+        await extrasRepo.set(
+          companyId: auth.companyId,
+          productId: saved.id,
+          extras: ProductExtras(
+            referenceImagePath: persisted.path,
+            referenceImageHash: persisted.sha256,
+            pendingUpload: true,
+          ),
+        );
+        await repo.upsert(saved.copyWith(
+          referenceImagePath: persisted.path,
+          referenceImageHash: persisted.sha256,
+        ));
+        try {
+          await erpRepo.uploadProductImage(
+            companyId: auth.companyId,
+            productId: saved.id,
+            sourcePath: persisted.path,
+            referenceImageHash: persisted.sha256,
+          );
+          await extrasRepo.markUploadSynced(
+            companyId: auth.companyId,
+            productId: saved.id,
+          );
+          importedImages++;
+        } catch (_) {
+          parseErrors.add('Image de "${product.name}" en attente de synchronisation.');
+        }
+      }
       ref.invalidate(productsListProvider);
       if (!mounted) return;
       setState(() {
         _imported = toImport.length;
+        _importedImages = importedImages;
         _errors = parseErrors;
       });
     } catch (error) {
@@ -205,7 +258,7 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
                         ),
                       ),
                       Text(
-                        'CSV ou Excel (.xlsx)',
+                        'CSV, Excel ou ZIP avec images',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
@@ -263,7 +316,7 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
                             icon: Icons.check_circle_outline_rounded,
                             color: const Color(0xFF059669),
                             label: 'Formats acceptes',
-                            value: 'CSV et Excel (.xlsx)',
+                            value: 'CSV, Excel (.xlsx) et ZIP',
                           ),
                           const SizedBox(height: 8),
                           _InfoRow(
@@ -277,7 +330,14 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
                             icon: Icons.tune_rounded,
                             color: const Color(0xFF7C3AED),
                             label: 'Colonnes optionnelles',
-                            value: 'sku, description',
+                            value: 'sku, description, image_url',
+                          ),
+                          const SizedBox(height: 8),
+                          _InfoRow(
+                            icon: Icons.image_outlined,
+                            color: const Color(0xFFDB2777),
+                            label: 'Image par produit',
+                            value: 'image_url ou ZIP + image_file',
                           ),
                           const SizedBox(height: 8),
                           _InfoRow(
@@ -402,6 +462,14 @@ class _ImportProductsScreenState extends ConsumerState<ImportProductsScreen> {
                                       style: const TextStyle(
                                           fontSize: 12,
                                           color: Color(0xFF059669)),
+                                    ),
+                                  if (_importedImages > 0)
+                                    Text(
+                                      '$_importedImages image${_importedImages > 1 ? 's' : ''} associe${_importedImages > 1 ? 'es' : 'e'}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF059669),
+                                      ),
                                     ),
                                   if (_skippedQuota > 0)
                                     Text(

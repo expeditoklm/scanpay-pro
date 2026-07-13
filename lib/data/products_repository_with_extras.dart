@@ -38,19 +38,22 @@ class ProductsRepositoryWithExtras implements ProductsRepository {
   @override
   Future<ProductsPage> listProductsPage({
     required String companyId,
-    required int limit,
-    String? startAfterName,
-    String? startAfterId,
+    required int page,
+    required int perPage,
+    String query = '',
   }) async {
-    final page = await _delegate.listProductsPage(
+    final remotePage = await _delegate.listProductsPage(
       companyId: companyId,
-      limit: limit,
-      startAfterName: startAfterName,
-      startAfterId: startAfterId,
+      page: page,
+      perPage: perPage,
+      query: query,
     );
     return ProductsPage(
-      items: await _applyList(page.items),
-      nextCursor: page.nextCursor,
+      items: await _applyList(remotePage.items),
+      page: remotePage.page,
+      perPage: remotePage.perPage,
+      total: remotePage.total,
+      totalPages: remotePage.totalPages,
     );
   }
 

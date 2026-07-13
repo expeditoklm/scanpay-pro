@@ -64,6 +64,10 @@ class ErpProductsRepository implements ProductsRepository {
         'stock': p.stock,
         'sku': p.sku,
         'description': p.description,
+        // Lors d'un import, referenceImageUrl contient le lien public renseigne
+        // dans la colonne image_url. On alimente les deux champs afin que
+        // l'image apparaisse aussi dans la verification client.
+        'image_url': p.referenceImageUrl,
         'consumer_code': p.consumerCode,
         'reference_image_url': p.referenceImageUrl,
         'reference_image_hash': p.referenceImageHash,
@@ -408,24 +412,44 @@ class ErpProductsRepository implements ProductsRepository {
   @override
   Future<ProductsPage> listProductsPage({
     required String companyId,
-    required int limit,
-    String? startAfterName,
-    String? startAfterId,
+    required int page,
+    required int perPage,
+    String query = '',
   }) async {
-    final all = await listProducts(companyId);
-    var start = 0;
-    if (startAfterName != null && startAfterId != null) {
-      start = all.indexWhere(
-        (p) => p.name == startAfterName && p.id == startAfterId,
+    final safePage = page < 1 ? 1 : page;
+    final uri = Uri.parse('$_base/api/products').replace(queryParameters: {
+      'page': '$safePage',
+      'per_page': '$perPage',
+      if (query.trim().isNotEmpty) 'q': query.trim(),
+    });
+    try {
+      final res = await _getWithRetry(uri);
+      if (res.statusCode != 200) throw Exception('ERP HTTP ${res.statusCode}');
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final items = (data['items'] as List<dynamic>? ?? const [])
+          .map((item) => _fromErpJson(item as Map<String, dynamic>, companyId))
+          .toList();
+      return ProductsPage(
+        items: items,
+        page: (data['page'] as num?)?.toInt() ?? safePage,
+        perPage: (data['per_page'] as num?)?.toInt() ?? perPage,
+        total: (data['total'] as num?)?.toInt() ?? items.length,
+        totalPages: (data['total_pages'] as num?)?.toInt() ?? 1,
       );
-      if (start >= 0) start++;
-      if (start < 0) start = 0;
+    } catch (_) {
+      final all = await listProducts(companyId);
+      final needle = query.trim().toLowerCase();
+      final filtered = all.where((product) => needle.isEmpty ||
+          product.name.toLowerCase().contains(needle) ||
+          (product.sku ?? '').toLowerCase().contains(needle)).toList();
+      return ProductsPage(
+        items: filtered.skip((safePage - 1) * perPage).take(perPage).toList(),
+        page: safePage,
+        perPage: perPage,
+        total: filtered.length,
+        totalPages: filtered.isEmpty ? 1 : (filtered.length / perPage).ceil(),
+      );
     }
-    final slice = all.skip(start).take(limit).toList();
-    final next = slice.isEmpty || start + slice.length >= all.length
-        ? null
-        : ProductsCursor(name: slice.last.name, id: slice.last.id);
-    return ProductsPage(items: slice, nextCursor: next);
   }
 
   @override

@@ -22,3 +22,7 @@ build/
 # Misc
 *.log
 .DS_Store
+
+# Fichiers temporaires generes pour les imports produits et les apercus.
+outputs/
+tmp_template/

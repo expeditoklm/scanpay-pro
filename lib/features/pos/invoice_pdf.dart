@@ -15,11 +15,12 @@ Future<Uint8List> buildInvoicePdf(Invoice invoice, PdfPageFormat _) async {
   final lineCount     = invoice.lines.length;
   final hasMecef      = invoice.isMecefCertified;
 
-  // PROFORMA = non assujetti TVA sans certification MECeF effective
-  // NORMALISÉE = assujetti avec ou sans certification (pending ou certified)
-  final isProforma    = !invoice.isVatRegistered && !hasMecef;
-  final showMecef     = !isProforma && (hasMecef || invoice.mecefStatus == MecefStatus.pending);
-  final showVat       = invoice.isVatRegistered && !isProforma;
+  // Non assujetti = proforma, même si une ancienne donnée contient MECeF.
+  // Assujetti = facture normalisée et éventuellement certification MECeF.
+  final isProforma    = !invoice.isVatRegistered;
+  final showMecef     = invoice.isVatRegistered &&
+      (hasMecef || invoice.mecefStatus == MecefStatus.pending);
+  final showVat       = invoice.isVatRegistered;
 
   // ── Lignes d'en-tête optionnelles ──────────────────────────────────────────
   final hasAddress = (invoice.companyAddress ?? '').trim().isNotEmpty;

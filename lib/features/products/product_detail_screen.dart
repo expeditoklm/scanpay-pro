@@ -355,7 +355,7 @@ class ProductDetailScreen extends ConsumerWidget {
                           ),
                           SizedBox(width: 10),
                           Text(
-                            'Générer des QR en PDF A4',
+                            'Générer des QR au format reçu',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
@@ -396,7 +396,7 @@ class ProductDetailScreen extends ConsumerWidget {
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => Scaffold(
-            appBar: AppBar(title: const Text('Planche QR A4')),
+            appBar: AppBar(title: const Text('Étiquettes QR - format reçu')),
             body: PdfPreview(
               build: (_) => buildProductCodesPdf(
                 product: product,

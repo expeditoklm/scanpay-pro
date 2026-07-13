@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 
 import '../../core/models/product.dart';
 import '../../core/services/product_share_service.dart';
 import '../../core/utils/product_image.dart';
 import '../../core/utils/price_formatter.dart';
 import '../../core/widgets/app_loader.dart';
+import '../../data/products_repository.dart';
+import '../../data/repository_providers.dart';
+import '../auth/auth_provider.dart';
 import 'import_products_screen.dart';
 import 'product_detail_screen.dart';
 import 'product_form_screen.dart';
-import 'products_providers.dart';
 
 class ProductsListScreen extends ConsumerStatefulWidget {
   const ProductsListScreen({super.key});
@@ -24,9 +27,30 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   final ScrollController _scrollCtrl = ScrollController();
   final Set<String> _selectedProductIds = <String>{};
   bool _isSharing = false;
+  final List<Product> _products = <Product>[];
+  Timer? _searchDebounce;
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  bool _isRequesting = false;
+  bool _hasMore = true;
+  bool _showScrollTop = false;
+  String? _loadError;
+  String? _loadMoreError;
+  int _page = 0;
+  int _total = 0;
+  static const _perPage = 20;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadProducts());
+  }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _scrollCtrl.removeListener(_onScroll);
     _searchCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -34,8 +58,18 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final asyncProducts = ref.watch(productsListProvider);
     final theme = Theme.of(context);
+    final asyncProducts = _loadError != null
+        ? AsyncValue<ProductsPage>.error(_loadError!, StackTrace.current)
+        : _isInitialLoading
+            ? const AsyncValue<ProductsPage>.loading()
+            : AsyncValue<ProductsPage>.data(ProductsPage(
+                items: _products,
+                page: _page,
+                perPage: _perPage,
+                total: _total,
+                totalPages: _total == 0 ? 1 : (_total / _perPage).ceil(),
+              ));
 
     return asyncProducts.when(
       loading: () => const AppLoader(),
@@ -100,7 +134,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
-                    onPressed: () => ref.invalidate(productsListProvider),
+                  onPressed: _reloadProducts,
                     icon: const Icon(Icons.refresh_rounded),
                     label: const Text('Recharger'),
                   ),
@@ -110,15 +144,15 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           ),
         );
       },
-      data: (products) {
+      data: (productsPage) {
+        final products = productsPage.items;
         final pendingCount = products.where((p) => p.pendingSync).length;
-        final filtered = _filterProducts(products);
         final selectionCount = _selectedProductIds.length;
 
         return Stack(
           children: [
             RefreshIndicator(
-          onRefresh: () async => ref.invalidate(productsListProvider),
+          onRefresh: _reloadProducts,
           child: ListView(
             controller: _scrollCtrl,
             // 88 = nav bar (78) + marge ; + bottom safe-area pour les encoche bas
@@ -133,19 +167,25 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                 searchCtrl: _searchCtrl,
                 selectionCount: selectionCount,
                 isSharing: _isSharing,
-                onQueryChanged: (value) => setState(() => _query = value),
+                onQueryChanged: (value) {
+                  setState(() {
+                    _query = value;
+                    _selectedProductIds.clear();
+                  });
+                  _scheduleSearch();
+                },
                 onShareSelection: selectionCount == 0
                     ? null
                     : () => _shareSelectedProducts(products),
                 onClearSelection: selectionCount == 0 ? null : _clearSelection,
               ),
               const SizedBox(height: 16),
-              if (products.isEmpty)
+              if (productsPage.total == 0 && _query.trim().isEmpty)
                 _EmptyProductsState(
                   onCreate: () => _openForm(context),
                   onImport: () => _openImport(context),
                 )
-              else if (filtered.isEmpty)
+              else if (products.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Center(
@@ -214,7 +254,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                       ),
                     ),
                   ),
-                ...filtered.map(
+                ...products.map(
                   (product) => Padding(
                     padding: const EdgeInsets.only(bottom: 14),
                     child: _ProductCard(
@@ -228,19 +268,49 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                 ),
                 // ── Pied de liste : total + retour en haut ──────────────
                 _ListFooter(
-                  totalCount: products.length,
-                  displayedCount: filtered.length,
-                  onScrollTop: () => _scrollCtrl.animateTo(
-                    0,
-                    duration: const Duration(milliseconds: 550),
-                    curve: Curves.easeOutCubic,
-                  ),
+                  totalCount: productsPage.total,
+                  displayedCount: products.length,
                 ),
+                if (_isLoadingMore)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_loadMoreError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 18),
+                    child: Center(
+                      child: TextButton.icon(
+                        onPressed: _loadNextPage,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Réessayer de charger les produits suivants'),
+                      ),
+                    ),
+                  )
+                else if (!_hasMore && products.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 18),
+                    child: Center(child: Text('Tous les produits sont affichés.')),
+                  ),
               ],
             ],
           ),
         ),
             // ── FAB flottant (toujours visible) ───────────────────────
+            if (_showScrollTop)
+              Positioned(
+                bottom: 202,
+                right: 22,
+                child: FloatingActionButton.small(
+                  heroTag: 'products-scroll-top',
+                  onPressed: () => _scrollCtrl.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 450),
+                    curve: Curves.easeOutCubic,
+                  ),
+                  child: const Icon(Icons.keyboard_arrow_up_rounded),
+                ),
+              ),
             Positioned(
               bottom: 130,
               right: 20,
@@ -278,28 +348,18 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     );
   }
 
-  List<Product> _filterProducts(List<Product> products) {
-    final query = _query.trim().toLowerCase();
-    if (query.isEmpty) return products;
-    return products.where((product) {
-      return product.name.toLowerCase().contains(query) ||
-          (product.sku ?? '').toLowerCase().contains(query) ||
-          (product.description ?? '').toLowerCase().contains(query);
-    }).toList();
-  }
-
   Future<void> _openForm(BuildContext context) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ProductFormScreen()),
     );
-    ref.invalidate(productsListProvider);
+    _reloadProducts();
   }
 
   Future<void> _openImport(BuildContext context) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => const ImportProductsScreen()),
     );
-    ref.invalidate(productsListProvider);
+    _reloadProducts();
   }
 
   Future<void> _handleProductTap(BuildContext context, Product product) async {
@@ -327,6 +387,87 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
   void _clearSelection() {
     setState(() => _selectedProductIds.clear());
+  }
+
+  void _scheduleSearch() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), _reloadProducts);
+  }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final position = _scrollCtrl.position;
+    final shouldShowTop = position.pixels > 260;
+    if (shouldShowTop != _showScrollTop && mounted) {
+      setState(() => _showScrollTop = shouldShowTop);
+    }
+    if (position.extentAfter < 280) _loadNextPage();
+  }
+
+  Future<void> _reloadProducts() async {
+    if (_isRequesting) return;
+    _searchDebounce?.cancel();
+    if (mounted) {
+      setState(() {
+        _isInitialLoading = true;
+        _isLoadingMore = false;
+        _loadError = null;
+        _loadMoreError = null;
+        _page = 0;
+        _total = 0;
+        _hasMore = true;
+        _products.clear();
+      });
+    }
+    await _loadNextPage(initial: true);
+  }
+
+  Future<void> _loadNextPage({bool initial = false}) async {
+    if (!_hasMore || _isRequesting || (!_isInitialLoading && initial)) return;
+    final auth = ref.read(authProvider);
+    if (auth == null) return;
+    _isRequesting = true;
+    if (mounted) setState(() => _isLoadingMore = !initial);
+    try {
+      final nextPage = _page + 1;
+      final result = await ref.read(productsRepositoryProvider).listProductsPage(
+        companyId: auth.companyId,
+        page: nextPage,
+        perPage: _perPage,
+        query: _query,
+      );
+      if (!mounted) return;
+      final knownIds = _products.map((product) => product.id).toSet();
+      setState(() {
+        _products.addAll(result.items.where((product) => knownIds.add(product.id)));
+        _page = result.page;
+        _total = result.total;
+        _hasMore = result.page < result.totalPages;
+        _isInitialLoading = false;
+        _isLoadingMore = false;
+        _isRequesting = false;
+        _loadMoreError = null;
+      });
+      // Si l'écran est grand et que la page ne remplit pas encore la hauteur,
+      // charge immédiatement la suivante sans attendre un geste de défilement.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollCtrl.hasClients && _scrollCtrl.position.extentAfter < 280) {
+          _loadNextPage();
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _isLoadingMore = false;
+        _isRequesting = false;
+        if (_products.isEmpty) {
+          _loadError = error.toString();
+        } else {
+          _loadMoreError = error.toString();
+        }
+      });
+    }
   }
 
   Future<void> _shareSelectedProducts(List<Product> products) async {
@@ -834,16 +975,54 @@ class _EmptyProductsState extends StatelessWidget {
 
 // ─── Pied de liste ────────────────────────────────────────────────────────────
 
+class _ProductsPager extends StatelessWidget {
+  const _ProductsPager({
+    required this.page,
+    required this.totalPages,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int page;
+  final int totalPages;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          OutlinedButton.icon(
+            onPressed: onPrevious,
+            icon: const Icon(Icons.chevron_left_rounded),
+            label: const Text('Précédent'),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Text('Page $page / $totalPages'),
+          ),
+          FilledButton.icon(
+            onPressed: onNext,
+            icon: const Icon(Icons.chevron_right_rounded),
+            label: const Text('Suivant'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ListFooter extends StatelessWidget {
   const _ListFooter({
     required this.totalCount,
     required this.displayedCount,
-    required this.onScrollTop,
   });
 
   final int totalCount;
   final int displayedCount;
-  final VoidCallback onScrollTop;
 
   @override
   Widget build(BuildContext context) {
@@ -886,44 +1065,6 @@ class _ListFooter extends StatelessWidget {
           const SizedBox(height: 14),
 
           // ── Bouton retour en haut ──────────────────────────────────────
-          GestureDetector(
-            onTap: onScrollTop,
-            child: Column(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFD7E2F2)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF1565D8).withOpacity(0.12),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.keyboard_arrow_up_rounded,
-                    color: Color(0xFF1565D8),
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Retour en haut',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF94A3B8),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
         ],
       ),
     );

@@ -20,24 +20,23 @@ class InMemoryProductsRepository implements ProductsRepository {
   @override
   Future<ProductsPage> listProductsPage({
     required String companyId,
-    required int limit,
-    String? startAfterName,
-    String? startAfterId,
+    required int page,
+    required int perPage,
+    String query = '',
   }) async {
-    final items = await listProducts(companyId);
-    var start = 0;
-    if (startAfterName != null && startAfterId != null) {
-      final index = items.indexWhere(
-        (product) => product.name == startAfterName && product.id == startAfterId,
-      );
-      start = index >= 0 ? index + 1 : 0;
-    }
-    final slice = items.skip(start).take(limit).toList();
+    final needle = query.trim().toLowerCase();
+    final items = (await listProducts(companyId)).where((product) {
+      return needle.isEmpty || product.name.toLowerCase().contains(needle) ||
+          (product.sku ?? '').toLowerCase().contains(needle);
+    }).toList();
+    final safePage = page < 1 ? 1 : page;
+    final slice = items.skip((safePage - 1) * perPage).take(perPage).toList();
     return ProductsPage(
       items: slice,
-      nextCursor: slice.length < limit
-          ? null
-          : ProductsCursor(name: slice.last.name, id: slice.last.id),
+      page: safePage,
+      perPage: perPage,
+      total: items.length,
+      totalPages: items.isEmpty ? 1 : (items.length / perPage).ceil(),
     );
   }
 

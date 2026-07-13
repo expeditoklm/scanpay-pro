@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,9 +10,12 @@ import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
 import '../../core/models/invoice.dart';
+import '../../data/invoices_repository.dart';
+import '../../data/repository_providers.dart';
 import '../../core/services/xprinter_service.dart';
 import '../../core/utils/price_formatter.dart';
 import '../pos/invoice_pdf.dart';
+import '../auth/auth_provider.dart';
 import 'billing_providers.dart';
 
 final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
@@ -35,9 +40,29 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   _Period _period = _Period.all;
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
+  final List<Invoice> _invoices = <Invoice>[];
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  bool _isRequesting = false;
+  bool _hasMore = true;
+  bool _showScrollTop = false;
+  String? _loadError;
+  String? _loadMoreError;
+  int _page = 0;
+  int _total = 0;
+  int _lastRefreshTick = 0;
+  static const _perPage = 20;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadSales());
+  }
 
   @override
   void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
@@ -92,7 +117,16 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final asyncInvoices = ref.watch(invoicesListProvider);
+    final refreshTick = ref.watch(salesRefreshProvider);
+    if (refreshTick != _lastRefreshTick) {
+      _lastRefreshTick = refreshTick;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reloadSales());
+    }
+    final asyncInvoices = _loadError != null
+        ? AsyncValue<List<Invoice>>.error(_loadError!, StackTrace.current)
+        : _isInitialLoading
+            ? const AsyncValue<List<Invoice>>.loading()
+            : AsyncValue<List<Invoice>>.data(_invoices);
 
     return asyncInvoices.when(
       loading: () => const AppLoader(),
@@ -148,8 +182,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         final sorted = _sorted(filtered);
         final periodTotal = _totalFor(filtered);
 
-        return ListView(
-          controller: _scrollCtrl,
+        return Stack(
+          children: [
+            ListView(
+              controller: _scrollCtrl,
           padding: EdgeInsets.fromLTRB(
             16, 14, 16,
             MediaQuery.of(context).padding.bottom + 88,
@@ -404,11 +440,117 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                   curve: Curves.easeOutCubic,
                 ),
               ),
+              if (_isLoadingMore)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_loadMoreError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Center(
+                    child: TextButton.icon(
+                      onPressed: _loadNextSalesPage,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Réessayer de charger les ventes suivantes'),
+                    ),
+                  ),
+                )
+              else if (!_hasMore)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 18),
+                  child: Center(child: Text('Toutes les ventes sont affichées.')),
+                ),
             ],
+          ],
+            ),
+            if (_showScrollTop)
+              Positioned(
+                right: 22,
+                bottom: 118,
+                child: FloatingActionButton.small(
+                  heroTag: 'sales-scroll-top',
+                  onPressed: () => _scrollCtrl.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 450),
+                    curve: Curves.easeOutCubic,
+                  ),
+                  child: const Icon(Icons.keyboard_arrow_up_rounded),
+                ),
+              ),
           ],
         );
       },
     );
+  }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final position = _scrollCtrl.position;
+    final shouldShowTop = position.pixels > 260;
+    if (shouldShowTop != _showScrollTop && mounted) {
+      setState(() => _showScrollTop = shouldShowTop);
+    }
+    if (position.extentAfter < 280) _loadNextSalesPage();
+  }
+
+  Future<void> _reloadSales() async {
+    if (_isRequesting) return;
+    setState(() {
+      _invoices.clear();
+      _page = 0;
+      _total = 0;
+      _hasMore = true;
+      _isInitialLoading = true;
+      _isLoadingMore = false;
+      _loadError = null;
+      _loadMoreError = null;
+    });
+    await _loadNextSalesPage(initial: true);
+  }
+
+  Future<void> _loadNextSalesPage({bool initial = false}) async {
+    if (!_hasMore || _isRequesting || (!_isInitialLoading && initial)) return;
+    final auth = ref.read(authProvider);
+    if (auth == null) return;
+    _isRequesting = true;
+    if (mounted) setState(() => _isLoadingMore = !initial);
+    try {
+      final result = await ref.read(invoicesRepositoryProvider).listPage(
+        companyId: auth.companyId,
+        page: _page + 1,
+        perPage: _perPage,
+      );
+      if (!mounted) return;
+      final ids = _invoices.map((invoice) => invoice.id).toSet();
+      setState(() {
+        _invoices.addAll(result.items.where((invoice) => ids.add(invoice.id)));
+        _page = result.page;
+        _total = result.total;
+        _hasMore = result.page < result.totalPages;
+        _isInitialLoading = false;
+        _isLoadingMore = false;
+        _isRequesting = false;
+        _loadMoreError = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollCtrl.hasClients && _scrollCtrl.position.extentAfter < 280) {
+          _loadNextSalesPage();
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _isLoadingMore = false;
+        _isRequesting = false;
+        if (_invoices.isEmpty) {
+          _loadError = error.toString();
+        } else {
+          _loadMoreError = error.toString();
+        }
+      });
+    }
   }
 
   String _periodLabel(_Period p) {
