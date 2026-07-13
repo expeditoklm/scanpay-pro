@@ -545,9 +545,9 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         _isLoadingMore = false;
         _isRequesting = false;
         if (_invoices.isEmpty) {
-          _loadError = error.toString();
+          _loadError = 'Impossible de charger les ventes. Verifiez votre connexion puis reessayez.';
         } else {
-          _loadMoreError = error.toString();
+          _loadMoreError = 'Impossible de charger les ventes suivantes. Reessayez quand la connexion revient.';
         }
       });
     }

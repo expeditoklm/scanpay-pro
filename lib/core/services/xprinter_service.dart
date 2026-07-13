@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:qr/qr.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/invoice.dart';
@@ -225,6 +227,39 @@ class XPrinterService {
     return printInvoice(invoice: invoice, printer: printer);
   }
 
+  /// Imprime les QR codes directement sur la XPrinter configurée, sans passer
+  /// par la boîte de dialogue d'impression Android.
+  Future<XPrinterResult> printProductQrLabels({
+    required String productName,
+    required List<String> qrData,
+    required List<String> codes,
+  }) async {
+    final printer = await savedPrinter();
+    if (printer == null) {
+      return const XPrinterResult(
+        success: false,
+        message: 'Aucune XPrinter configurée. Configurez-la dans la caisse avant d’imprimer.',
+      );
+    }
+    if (qrData.isEmpty || qrData.length != codes.length) {
+      return const XPrinterResult(
+        success: false,
+        message: 'Les étiquettes QR à imprimer sont invalides.',
+      );
+    }
+
+    final bytes = _buildQrLabels(
+      productName: productName,
+      qrData: qrData,
+      codes: codes,
+    );
+    return _sendBytes(
+      printer: printer,
+      bytes: bytes,
+      successMessage: '${qrData.length} étiquette(s) QR envoyée(s) à ${printer.name}.',
+    );
+  }
+
   Future<XPrinterResult> printInvoice({
     required Invoice invoice,
     required XPrinterDevice printer,
@@ -362,6 +397,360 @@ class XPrinterService {
     }
   }
 
+  Future<XPrinterResult> _sendBytes({
+    required XPrinterDevice printer,
+    required List<int> bytes,
+    required String successMessage,
+  }) async {
+    switch (printer.type) {
+      case XPrinterConnectionType.bluetooth:
+        final allowed = await requestPermissions();
+        if (!allowed) {
+          return const XPrinterResult(
+            success: false,
+            message: 'Permissions Bluetooth refusées. Autorisez le Bluetooth puis réessayez.',
+          );
+        }
+        try {
+          var connected = await PrintBluetoothThermal.connectionStatus;
+          if (!connected) {
+            final mac = printer.mac;
+            if (mac == null || mac.trim().isEmpty) {
+              return const XPrinterResult(
+                success: false,
+                message: 'Adresse Bluetooth de la XPrinter manquante.',
+              );
+            }
+            connected = await PrintBluetoothThermal.connect(macPrinterAddress: mac);
+          }
+          if (!connected) {
+            return XPrinterResult(
+              success: false,
+              message: 'XPrinter non connectée : allumez ${printer.name} et vérifiez le Bluetooth.',
+            );
+          }
+          await PrintBluetoothThermal.writeBytes(bytes);
+          return XPrinterResult(success: true, message: successMessage);
+        } catch (_) {
+          return XPrinterResult(
+            success: false,
+            message: 'Impression impossible : ${printer.name} est peut-être éteinte ou hors de portée.',
+          );
+        }
+
+      case XPrinterConnectionType.network:
+        final host = printer.host?.trim() ?? '';
+        if (host.isEmpty) {
+          return const XPrinterResult(
+            success: false,
+            message: 'Adresse IP de la XPrinter manquante.',
+          );
+        }
+        try {
+          final socket = await Socket.connect(
+            host,
+            printer.port,
+            timeout: const Duration(seconds: 5),
+          );
+          socket.add(bytes);
+          await socket.flush();
+          await socket.close();
+          return XPrinterResult(success: true, message: successMessage);
+        } catch (_) {
+          return XPrinterResult(
+            success: false,
+            message: 'XPrinter réseau non joignable à ${printer.subtitle}.',
+          );
+        }
+
+      case XPrinterConnectionType.usb:
+        try {
+          final success = await _channel.invokeMethod<bool>('print', {
+            'deviceId': printer.usbDeviceId,
+            'vendorId': printer.usbVendorId,
+            'productId': printer.usbProductId,
+            'bytes': Uint8List.fromList(bytes),
+          });
+          if (success == true) {
+            return XPrinterResult(success: true, message: successMessage);
+          }
+          return XPrinterResult(
+            success: false,
+            message: 'XPrinter USB non détectée : vérifiez le câble ou l’adaptateur OTG.',
+          );
+        } catch (_) {
+          return XPrinterResult(
+            success: false,
+            message: 'Impression USB impossible. Vérifiez la connexion de ${printer.name}.',
+          );
+        }
+    }
+  }
+
+  List<int> _buildQrLabels({
+    required String productName,
+    required List<String> qrData,
+    required List<String> codes,
+  }) {
+    final bytes = <int>[
+      ..._init,
+      ..._codepage,
+      ..._alignCenter,
+      ..._boldOn,
+      ..._text(_clean(productName).toUpperCase()),
+      ..._lf,
+      ..._boldOff,
+    ];
+
+    for (var index = 0; index < qrData.length; index += 2) {
+      final rightIndex = index + 1;
+      final hasRightQr = rightIndex < qrData.length;
+      final leftCenter = _qrCenter(qrData[index], hasRightQr: hasRightQr);
+      final rightCenter = hasRightQr
+          ? _qrCenter(qrData[rightIndex], hasRightQr: true, isRight: true)
+          : null;
+      final rightProductName = rightIndex < qrData.length ? productName : null;
+      bytes.addAll(
+        _twoLabelTextRow(
+          leftText: productName,
+          rightText: rightProductName,
+          leftCenter: leftCenter,
+          rightCenter: rightCenter,
+          bold: true,
+        ),
+      );
+      bytes.addAll(_twoQrRaster(
+        leftData: qrData[index],
+        rightData: rightIndex < qrData.length ? qrData[rightIndex] : null,
+      ));
+      bytes.addAll(_qrCodeLine(
+        leftCode: codes[index],
+        rightCode: rightIndex < codes.length ? codes[rightIndex] : null,
+        leftCenter: leftCenter,
+        rightCenter: rightCenter,
+      ));
+      bytes.addAll(
+        _twoLabelTextRow(
+          leftText: 'Verifier la',
+          rightText: rightIndex < codes.length ? 'Verifier la' : null,
+          leftCenter: leftCenter,
+          rightCenter: rightCenter,
+          compact: true,
+        ),
+      );
+      bytes.addAll(
+        _twoLabelTextRow(
+          leftText: 'provenance',
+          rightText: rightIndex < codes.length ? 'provenance' : null,
+          leftCenter: leftCenter,
+          rightCenter: rightCenter,
+          compact: true,
+        ),
+      );
+      bytes.addAll(_lf);
+      bytes.addAll(_rule());
+    }
+
+    bytes.addAll(_cut);
+    return bytes;
+  }
+
+  List<int> _twoQrRaster({required String leftData, String? rightData}) {
+    const paperWidth = 576;
+    const twoLabelsLeftOffset = 34;
+    const rightOffset = 322;
+    const moduleScale = 3;
+    const quietZone = 4;
+    final left = _qrImage(leftData);
+    final right = rightData == null ? null : _qrImage(rightData);
+    final leftSize = (left.moduleCount + quietZone * 2) * moduleScale;
+    final rightSize = right == null
+        ? 0
+        : (right.moduleCount + quietZone * 2) * moduleScale;
+    final height = leftSize > rightSize ? leftSize : rightSize;
+    final leftOffset = right == null
+        ? (paperWidth - leftSize) ~/ 2
+        : twoLabelsLeftOffset;
+    final widthBytes = paperWidth ~/ 8;
+    final raster = List<int>.filled(widthBytes * height, 0);
+
+    _drawQr(
+      raster: raster,
+      widthBytes: widthBytes,
+      qr: left,
+      offsetX: leftOffset,
+      scale: moduleScale,
+      quietZone: quietZone,
+    );
+    if (right != null) {
+      _drawQr(
+        raster: raster,
+        widthBytes: widthBytes,
+        qr: right,
+        offsetX: rightOffset,
+        scale: moduleScale,
+        quietZone: quietZone,
+      );
+    }
+
+    return [
+      0x1D, 0x76, 0x30, 0x00,
+      widthBytes & 0xFF, (widthBytes >> 8) & 0xFF,
+      height & 0xFF, (height >> 8) & 0xFF,
+      ...raster,
+    ];
+  }
+
+  int _qrCenter(
+    String data, {
+    required bool hasRightQr,
+    bool isRight = false,
+  }) {
+    const paperWidth = 576;
+    const twoLabelsLeftOffset = 34;
+    const rightOffset = 322;
+    const moduleScale = 3;
+    const quietZone = 4;
+    final size = (_qrImage(data).moduleCount + quietZone * 2) * moduleScale;
+    final offset = !hasRightQr
+        ? (paperWidth - size) ~/ 2
+        : (isRight ? rightOffset : twoLabelsLeftOffset);
+    return offset + size ~/ 2;
+  }
+
+  QrImage _qrImage(String data) {
+    final code = QrCode.fromData(
+      data: data,
+      errorCorrectLevel: QrErrorCorrectLevel.M,
+    );
+    return QrImage(code);
+  }
+
+  void _drawQr({
+    required List<int> raster,
+    required int widthBytes,
+    required QrImage qr,
+    required int offsetX,
+    required int scale,
+    required int quietZone,
+  }) {
+    for (var row = 0; row < qr.moduleCount; row++) {
+      for (var column = 0; column < qr.moduleCount; column++) {
+        if (!qr.isDark(row, column)) continue;
+        final startX = offsetX + (column + quietZone) * scale;
+        final startY = (row + quietZone) * scale;
+        for (var y = startY; y < startY + scale; y++) {
+          for (var x = startX; x < startX + scale; x++) {
+            final index = y * widthBytes + (x ~/ 8);
+            raster[index] |= 0x80 >> (x % 8);
+          }
+        }
+      }
+    }
+  }
+
+  List<int> _qrCodeLine({
+    required String leftCode,
+    required int leftCenter,
+    String? rightCode,
+    int? rightCenter,
+  }) {
+    final bytes = <int>[
+      ..._alignLeft,
+      ..._absolutePosition(_centeredTextOffset(leftCode, leftCenter)),
+      ..._text(leftCode),
+    ];
+    if (rightCode != null) {
+      bytes.addAll(_absolutePosition(
+        _centeredTextOffset(rightCode, rightCenter ?? leftCenter),
+      ));
+      bytes.addAll(_text(rightCode));
+    }
+    return bytes;
+  }
+
+  /// Texte placé au-dessus ou au-dessous de chaque QR dans une rangée.
+  /// Les deux colonnes correspondent aux mêmes positions que les QR raster.
+  List<int> _twoLabelTextRow({
+    required String leftText,
+    required int leftCenter,
+    String? rightText,
+    int? rightCenter,
+    bool bold = false,
+    bool compact = false,
+  }) {
+    final maxCharacters = compact ? 20 : 18;
+    final left = _labelText(leftText, maxCharacters);
+    final right = rightText == null ? null : _labelText(rightText, maxCharacters);
+    final bytes = <int>[..._alignLeft];
+    if (compact) bytes.addAll(_fontB);
+    if (bold) bytes.addAll(_boldOn);
+    bytes
+      ..addAll(_absolutePosition(_centeredTextOffset(
+        left,
+        leftCenter,
+        compact: compact,
+      )))
+      ..addAll(_text(left));
+    if (right != null) {
+      bytes
+        ..addAll(_absolutePosition(_centeredTextOffset(
+          right,
+          rightCenter ?? leftCenter,
+          compact: compact,
+        )))
+        ..addAll(_text(right));
+    }
+    bytes.addAll(_lf);
+    if (bold) bytes.addAll(_boldOff);
+    if (compact) bytes.addAll(_fontA);
+    return bytes;
+  }
+
+  static String _labelText(String value, int maxCharacters) {
+    final clean = _clean(value);
+    if (clean.length <= maxCharacters) return clean;
+    return '${clean.substring(0, maxCharacters - 1)}.';
+  }
+
+  static int _centeredTextOffset(
+    String text,
+    int center, {
+    bool compact = false,
+  }) {
+    // Font A fait environ 12 points de large, Font B environ 9.
+    final characterWidth = compact ? 9 : 12;
+    return (center - (text.length * characterWidth) ~/ 2)
+        .clamp(0, 575)
+        .toInt();
+  }
+
+  static List<int> _absolutePosition(int dots) => [
+        0x1B,
+        0x24,
+        dots & 0xFF,
+        (dots >> 8) & 0xFF,
+      ];
+
+  static List<String> _wrapReceiptText(String value, int width) {
+    final clean = _clean(value);
+    if (clean.length <= width) return [clean];
+    final words = clean.split(' ');
+    final lines = <String>[];
+    var line = '';
+    for (final word in words) {
+      final candidate = line.isEmpty ? word : '$line $word';
+      if (candidate.length <= width) {
+        line = candidate;
+      } else {
+        if (line.isNotEmpty) lines.add(line);
+        line = word;
+      }
+    }
+    if (line.isNotEmpty) lines.add(line);
+    return lines;
+  }
+
   List<int> _buildReceipt(Invoice invoice) {
     final date = DateFormat('dd/MM/yyyy HH:mm').format(invoice.createdAt);
     final reference = invoice.reference.isNotEmpty ? invoice.reference : invoice.id;
@@ -398,8 +787,14 @@ class XPrinterService {
     for (final item in invoice.lines) {
       final label = '${item.quantity} x ${item.name}';
       final total = item.lineTotal.toStringAsFixed(0);
+      for (final line
+          in _wrapReceiptText(label, _lineWidth - total.length - 1)) {
+        bytes
+          ..addAll(_text(line))
+          ..addAll(_lf);
+      }
       bytes
-        ..addAll(_text(_twoColumns(label, total)))
+        ..addAll(_text(_twoColumns('', total)))
         ..addAll(_lf)
         ..addAll(_text('  ${item.unitPrice.toStringAsFixed(0)} FCFA'))
         ..addAll(_lf);
@@ -407,18 +802,66 @@ class XPrinterService {
 
     bytes
       ..addAll(_rule())
+      ..addAll(_text(_twoColumns('Sous-total', '${invoice.total.toStringAsFixed(0)} FCFA')))
+      ..addAll(_lf);
+
+    if (invoice.isVatRegistered) {
+      bytes
+        ..addAll(_text(_twoColumns('BASE IMPOSABLE [B] 18%', '${invoice.totalHT.toStringAsFixed(0)} FCFA')))
+        ..addAll(_lf)
+        ..addAll(_text(_twoColumns('TOTAL TVA [B] 18%', '${invoice.tva.toStringAsFixed(0)} FCFA')))
+        ..addAll(_lf);
+    }
+
+    bytes
+      ..addAll(_rule())
       ..addAll(_alignRight)
       ..addAll(_boldOn)
-      ..addAll(_text('TOTAL ${invoice.total.toStringAsFixed(0)} FCFA'))
+      ..addAll(_text('TOTAL TTC ${invoice.total.toStringAsFixed(0)} FCFA'))
       ..addAll(_lf)
       ..addAll(_boldOff)
+      ..addAll(_alignLeft)
+      ..addAll(_text(_twoColumns('Mode paiement', invoice.paymentMethod)))
+      ..addAll(_lf)
       ..addAll(_alignCenter)
+      ..addAll(_lf)
+      ..addAll(_text('Vente enregistree depuis l application mobile'))
       ..addAll(_lf)
       ..addAll(_text('Merci pour votre achat'))
       ..addAll(_lf)
-      ..addAll(_text('Ticket genere par QuickSellPay'))
+      ..addAll(_text('Conservez ce recu comme preuve d achat'))
       ..addAll(_lf)
-      ..addAll(_lf)
+      ..addAll(_rule());
+
+    if (invoice.isMecefCertified) {
+      bytes
+        ..addAll(_alignCenter)
+        ..addAll(_boldOn)
+        ..addAll(_text('FACTURE NORMALISEE - CERTIFIEE'))
+        ..addAll(_lf)
+        ..addAll(_boldOff)
+        ..addAll(_text('QR MECeF - VERIFICATION DGI'))
+        ..addAll(_lf)
+        ..addAll(_twoQrRaster(leftData: invoice.mecefCU!, rightData: null))
+        ..addAll(_lf)
+        ..addAll(_text('Scannez pour verifier aupres de la DGI'))
+        ..addAll(_lf);
+    } else if (invoice.isVatRegistered) {
+      bytes
+        ..addAll(_alignCenter)
+        ..addAll(_boldOn)
+        ..addAll(_text('FACTURE NORMALISEE - EN ATTENTE'))
+        ..addAll(_lf)
+        ..addAll(_boldOff)
+        ..addAll(_text('Certification DGI en attente'))
+        ..addAll(_lf)
+        ..addAll(_text('Le QR MECeF sera imprime apres synchronisation'))
+        ..addAll(_lf);
+    }
+
+    bytes
+      ..addAll(_alignCenter)
+      ..addAll(_code128(reference))
       ..addAll(_lf)
       ..addAll(_cut);
 
@@ -436,11 +879,27 @@ class XPrinterService {
   static List<int> get _boldOn => const [0x1B, 0x45, 0x01];
   static List<int> get _boldOff => const [0x1B, 0x45, 0x00];
   static List<int> get _normalText => const [0x1D, 0x21, 0x00];
+  static List<int> get _fontA => const [0x1B, 0x4D, 0x00];
+  static List<int> get _fontB => const [0x1B, 0x4D, 0x01];
   static List<int> get _largeText => const [0x1D, 0x21, 0x11];
   static List<int> get _lf => const [0x0A];
   static List<int> get _cut => const [0x1D, 0x56, 0x42, 0x00];
 
   static List<int> _rule() => [..._text('-' * _lineWidth), ..._lf];
+
+  /// Code-barres de la référence, également visible sur l'aperçu PDF.
+  /// La plupart des XPrinter 80 mm prennent en charge ESC/POS Code 128.
+  static List<int> _code128(String value) {
+    final data = '{B${_clean(value)}';
+    final limited = data.length > 250 ? data.substring(0, 250) : data;
+    return [
+      0x1D, 0x68, 72, // hauteur
+      0x1D, 0x77, 2, // largeur du trait
+      0x1D, 0x48, 2, // texte lisible sous le code
+      0x1D, 0x6B, 73, limited.length,
+      ...limited.codeUnits,
+    ];
+  }
 
   static List<int> _text(String value) => _clean(value).codeUnits;
 

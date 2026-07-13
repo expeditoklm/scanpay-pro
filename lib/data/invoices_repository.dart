@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -34,21 +35,77 @@ class InvoicesRepository {
       'page': '$safePage',
       'per_page': '$perPage',
     });
-    final response = await _getWithRetry(uri);
-    if (response.statusCode != 200) throw Exception('ERP HTTP ${response.statusCode}');
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final items = (data['items'] as List<dynamic>? ?? const [])
-        .map((item) => _fromSaleJson(
-              item as Map<String, dynamic>,
-              companyId: companyId,
-              companyName: auth.companyName,
+    try {
+      final response = await _getWithRetry(uri);
+      if (response.statusCode != 200) {
+        throw Exception('ERP HTTP ${response.statusCode}');
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List<dynamic>? ?? const [])
+          .map((item) => _fromSaleJson(
+                item as Map<String, dynamic>,
+                companyId: companyId,
+                companyName: auth.companyName,
+                isVatRegistered: auth.isVatRegistered,
+                companyIfu: auth.companyIfu,
+                companyRc: auth.companyRc,
+                companyAddress: auth.companyAddress,
+                companyPhone: auth.companyPhone,
             ))
-        .toList();
+          .toList();
+      await _cacheSalesForOffline(companyId, items);
+      return InvoicesPage(
+        items: items,
+        page: (data['page'] as num?)?.toInt() ?? safePage,
+        total: (data['total'] as num?)?.toInt() ?? items.length,
+        totalPages: (data['total_pages'] as num?)?.toInt() ?? 1,
+      );
+    } catch (_) {
+      // Hors ligne : les ventes deja synchronisees et les ventes locales
+      // restent consultables sans essayer d'afficher l'erreur reseau brute.
+      return _localSalesPage(companyId, page: safePage, perPage: perPage);
+    }
+  }
+
+  Future<void> _cacheSalesForOffline(
+    String companyId,
+    List<Invoice> remoteItems,
+  ) async {
+    final persisted = await _offlineStorage.loadInvoices(companyId);
+    final byId = <String, Invoice>{
+      for (final invoice in persisted) invoice.id: invoice,
+      for (final invoice in remoteItems) invoice.id: invoice,
+    };
+    final merged = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    _cache[companyId] = merged;
+    await _offlineStorage.saveInvoices(companyId, merged);
+  }
+
+  Future<InvoicesPage> _localSalesPage(
+    String companyId, {
+    required int page,
+    required int perPage,
+  }) async {
+    final persisted = await _offlineStorage.loadInvoices(companyId);
+    final invoices = persisted.isNotEmpty
+        ? persisted
+        : List<Invoice>.from(_cache[companyId] ?? const []);
+    invoices.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    _cache[companyId] = invoices;
+
+    final safePerPage = perPage < 1 ? 20 : perPage;
+    final total = invoices.length;
+    final totalPages = math.max(1, (total / safePerPage).ceil());
+    final start = (page - 1) * safePerPage;
+    final items = start >= total
+        ? const <Invoice>[]
+        : invoices.sublist(start, math.min(start + safePerPage, total));
     return InvoicesPage(
       items: items,
-      page: (data['page'] as num?)?.toInt() ?? safePage,
-      total: (data['total'] as num?)?.toInt() ?? items.length,
-      totalPages: (data['total_pages'] as num?)?.toInt() ?? 1,
+      page: page,
+      total: total,
+      totalPages: totalPages,
     );
   }
 
@@ -108,6 +165,11 @@ class InvoicesRepository {
                 item as Map<String, dynamic>,
                 companyId: companyId,
                 companyName: auth.companyName,
+                isVatRegistered: auth.isVatRegistered,
+                companyIfu: auth.companyIfu,
+                companyRc: auth.companyRc,
+                companyAddress: auth.companyAddress,
+                companyPhone: auth.companyPhone,
               ))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -318,6 +380,11 @@ class InvoicesRepository {
           sale,
           companyId: companyId,
           companyName: auth.companyName,
+          isVatRegistered: auth.isVatRegistered,
+          companyIfu: auth.companyIfu,
+          companyRc: auth.companyRc,
+          companyAddress: auth.companyAddress,
+          companyPhone: auth.companyPhone,
         );
         final oldInvoiceId = entry['invoice_id']?.toString();
         invoices.removeWhere((invoice) => invoice.id == oldInvoiceId);

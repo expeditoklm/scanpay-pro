@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/config/erp_config.dart';
@@ -12,6 +11,7 @@ import '../../core/utils/product_image.dart';
 import '../../core/utils/price_formatter.dart';
 import '../../core/utils/qr_hmac.dart';
 import '../../core/widgets/app_loader.dart';
+import '../../core/services/xprinter_service.dart';
 import '../auth/auth_provider.dart';
 import '../auth/auth_state.dart';
 import 'product_codes_pdf.dart';
@@ -349,13 +349,13 @@ class ProductDetailScreen extends ConsumerWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            Icons.picture_as_pdf_outlined,
+                            Icons.print_outlined,
                             color: Colors.white,
                             size: 20,
                           ),
                           SizedBox(width: 10),
                           Text(
-                            'Générer des QR au format reçu',
+                            'Générer et imprimer les QR',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
@@ -371,6 +371,32 @@ class ProductDetailScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _printQrLabels(
+    BuildContext context,
+    List<ProductQrSheetEntry> entries,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Connexion à la XPrinter en cours...', textAlign: TextAlign.center),
+      ),
+    );
+    final result = await const XPrinterService().printProductQrLabels(
+      productName: product.name,
+      qrData: entries.map((entry) => entry.qrData).toList(),
+      codes: entries.map((entry) => entry.code).toList(),
+    );
+    if (!context.mounted) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(result.message, textAlign: TextAlign.center),
+        backgroundColor: result.success ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 5),
       ),
     );
   }
@@ -393,20 +419,9 @@ class ProductDetailScreen extends ConsumerWidget {
       final entries = await _generateQrEntries(auth, quantity);
       if (!context.mounted) return;
       Navigator.of(context).pop();
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => Scaffold(
-            appBar: AppBar(title: const Text('Étiquettes QR - format reçu')),
-            body: PdfPreview(
-              build: (_) => buildProductCodesPdf(
-                product: product,
-                companyName: auth.companyName,
-                entries: entries,
-              ),
-            ),
-          ),
-        ),
-      );
+      // Le bouton "Générer" envoie directement les étiquettes à la XPrinter.
+      // L'aperçu PDF A4 ne doit pas bloquer l'impression thermique.
+      await _printQrLabels(context, entries);
     } catch (error) {
       if (!context.mounted) return;
       Navigator.of(context).pop();

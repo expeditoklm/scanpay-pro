@@ -125,6 +125,18 @@ class AuthNotifier extends Notifier<AuthState?> {
             body: jsonEncode({'refresh_token': current.refreshToken}),
           )
           .timeout(const Duration(seconds: 12));
+
+      // Une session n'est supprimée que si le serveur confirme que le token
+      // est invalide. Sans connexion, on garde la session locale afin de
+      // continuer les ventes et l'impression des reçus hors ligne.
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        await signOut();
+        return false;
+      }
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return false;
+      }
+
       final refreshed = _decodeAuthResponse(res);
       await setSession(
         refreshed.copyWith(
@@ -134,8 +146,15 @@ class AuthNotifier extends Notifier<AuthState?> {
         ),
       );
       return true;
+    } on SocketException {
+      return false;
+    } on TimeoutException {
+      return false;
+    } on http.ClientException {
+      return false;
     } catch (_) {
-      await signOut();
+      // Une erreur temporaire ne doit jamais déconnecter un utilisateur.
+      // Le prochain accès réseau renouvellera la session si nécessaire.
       return false;
     }
   }

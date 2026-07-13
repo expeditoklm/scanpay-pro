@@ -21,13 +21,15 @@ Future<Uint8List> buildProductCodesPdf({
   required List<ProductQrSheetEntry> entries,
 }) async {
   final doc = pw.Document();
-  // Une colonne sur un rouleau de 72 mm : compatible avec les imprimantes
-  // thermiques. La hauteur augmente avec le nombre d'etiquettes generees.
-  const labelHeightMm = 72.0;
-  final receiptHeight = (30.0 + (entries.length * labelHeightMm)) *
+  // Deux etiquettes par ligne sur un rouleau de 80 mm. La hauteur augmente
+  // avec le nombre de lignes, pour les imprimantes thermiques autocollantes.
+  const labelHeightMm = 48.0;
+  const labelsPerRow = 2;
+  final rowCount = (entries.length + labelsPerRow - 1) ~/ labelsPerRow;
+  final receiptHeight = (30.0 + (rowCount * labelHeightMm)) *
       PdfPageFormat.mm;
   final receiptFormat = PdfPageFormat(
-    72 * PdfPageFormat.mm,
+    80 * PdfPageFormat.mm,
     receiptHeight,
     marginAll: 4 * PdfPageFormat.mm,
   );
@@ -63,49 +65,26 @@ Future<Uint8List> buildProductCodesPdf({
             ),
           ),
           pw.SizedBox(height: 7),
-          for (final entry in entries)
+          for (var index = 0; index < entries.length; index += labelsPerRow)
             pw.Container(
               width: labelWidth,
               height: labelHeightMm * PdfPageFormat.mm,
-              padding: const pw.EdgeInsets.symmetric(vertical: 3),
               decoration: const pw.BoxDecoration(
                 border: pw.Border(
                   bottom: pw.BorderSide(color: PdfColors.grey500, width: 0.5),
                 ),
               ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                 children: [
-                  pw.Text(
-                    product.name,
-                    textAlign: pw.TextAlign.center,
-                    maxLines: 2,
-                    style: pw.TextStyle(
-                      fontSize: 10,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
+                  pw.Expanded(
+                    child: _buildQrLabel(product, entries[index]),
                   ),
-                  pw.SizedBox(height: 3),
-                  pw.BarcodeWidget(
-                    data: entry.qrData,
-                    barcode: pw.Barcode.qrCode(),
-                    width: 48 * PdfPageFormat.mm,
-                    height: 48 * PdfPageFormat.mm,
-                  ),
-                  pw.SizedBox(height: 2),
-                  pw.Text(
-                    entry.code,
-                    textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(
-                      fontSize: 10,
-                      fontWeight: pw.FontWeight.bold,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                  pw.Text(
-                    'Verifier la provenance',
-                    textAlign: pw.TextAlign.center,
-                    style: const pw.TextStyle(fontSize: 7),
+                  pw.SizedBox(width: 2 * PdfPageFormat.mm),
+                  pw.Expanded(
+                    child: index + 1 < entries.length
+                        ? _buildQrLabel(product, entries[index + 1])
+                        : pw.SizedBox(),
                   ),
                 ],
               ),
@@ -116,4 +95,46 @@ Future<Uint8List> buildProductCodesPdf({
   );
 
   return doc.save();
+}
+
+pw.Widget _buildQrLabel(Product product, ProductQrSheetEntry entry) {
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 2),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.Text(
+          product.name,
+          textAlign: pw.TextAlign.center,
+          maxLines: 1,
+          style: pw.TextStyle(
+            fontSize: 7,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.SizedBox(height: 2),
+        pw.BarcodeWidget(
+          data: entry.qrData,
+          barcode: pw.Barcode.qrCode(),
+          width: 29 * PdfPageFormat.mm,
+          height: 29 * PdfPageFormat.mm,
+        ),
+        pw.SizedBox(height: 1),
+        pw.Text(
+          entry.code,
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: 7.5,
+            fontWeight: pw.FontWeight.bold,
+            letterSpacing: 0.4,
+          ),
+        ),
+        pw.Text(
+          'Verifier la provenance',
+          textAlign: pw.TextAlign.center,
+          style: const pw.TextStyle(fontSize: 5.5),
+        ),
+      ],
+    ),
+  );
 }
