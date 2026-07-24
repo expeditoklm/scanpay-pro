@@ -30,5 +30,6 @@ abstract class ProductsRepository {
   Future<Product> upsert(Product product);
   Future<void> bulkUpsert(String companyId, List<Product> products);
   Future<void> delete(String companyId, String productId);
-  Future<Product?> decrementStock(String companyId, String productId, int quantity);
+  Future<Product?> decrementStock(
+      String companyId, String productId, int quantity);
 }

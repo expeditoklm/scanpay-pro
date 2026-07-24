@@ -1,0 +1,5 @@
+# Copier ce fichier vers key.properties, hors Git, puis renseigner le keystore.
+storeFile=release.jks
+storePassword=CHANGE_ME
+keyAlias=quicksellpay
+keyPassword=CHANGE_ME

@@ -28,6 +28,7 @@ dependencies:
   path_provider: ^2.1.4
   http: ^1.2.2
   shared_preferences: ^2.3.2
+  flutter_secure_storage: ^9.2.2
   video_player: ^2.9.2
   csv: ^8.0.0
   file_picker: ^8.1.2

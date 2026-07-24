@@ -417,10 +417,32 @@ class ErpProductsRepository implements ProductsRepository {
     String query = '',
   }) async {
     final safePage = page < 1 ? 1 : page;
+
+    // Certains anciens serveurs ne filtraient pas correctement les recherches
+    // paginées par boutique. Pour éviter d'afficher le catalogue d'une autre
+    // boutique, une recherche est toujours effectuée à partir du catalogue
+    // complet déjà limité au compte connecté, puis filtrée localement.
+    // La liste sans recherche reste paginée côté serveur.
+    if (query.trim().isNotEmpty) {
+      final all = await listProducts(companyId);
+      final needle = query.trim().toLowerCase();
+      final filtered = all
+          .where((product) =>
+              product.name.toLowerCase().contains(needle) ||
+              (product.sku ?? '').toLowerCase().contains(needle))
+          .toList();
+      return ProductsPage(
+        items: filtered.skip((safePage - 1) * perPage).take(perPage).toList(),
+        page: safePage,
+        perPage: perPage,
+        total: filtered.length,
+        totalPages: filtered.isEmpty ? 1 : (filtered.length / perPage).ceil(),
+      );
+    }
+
     final uri = Uri.parse('$_base/api/products').replace(queryParameters: {
       'page': '$safePage',
       'per_page': '$perPage',
-      if (query.trim().isNotEmpty) 'q': query.trim(),
     });
     try {
       final res = await _getWithRetry(uri);
@@ -439,9 +461,12 @@ class ErpProductsRepository implements ProductsRepository {
     } catch (_) {
       final all = await listProducts(companyId);
       final needle = query.trim().toLowerCase();
-      final filtered = all.where((product) => needle.isEmpty ||
-          product.name.toLowerCase().contains(needle) ||
-          (product.sku ?? '').toLowerCase().contains(needle)).toList();
+      final filtered = all
+          .where((product) =>
+              needle.isEmpty ||
+              product.name.toLowerCase().contains(needle) ||
+              (product.sku ?? '').toLowerCase().contains(needle))
+          .toList();
       return ProductsPage(
         items: filtered.skip((safePage - 1) * perPage).take(perPage).toList(),
         page: safePage,

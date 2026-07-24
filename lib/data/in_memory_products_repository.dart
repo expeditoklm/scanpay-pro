@@ -26,7 +26,8 @@ class InMemoryProductsRepository implements ProductsRepository {
   }) async {
     final needle = query.trim().toLowerCase();
     final items = (await listProducts(companyId)).where((product) {
-      return needle.isEmpty || product.name.toLowerCase().contains(needle) ||
+      return needle.isEmpty ||
+          product.name.toLowerCase().contains(needle) ||
           (product.sku ?? '').toLowerCase().contains(needle);
     }).toList();
     final safePage = page < 1 ? 1 : page;
@@ -55,7 +56,8 @@ class InMemoryProductsRepository implements ProductsRepository {
   }
 
   @override
-  Future<Product?> getByConsumerCode(String companyId, String consumerCode) async {
+  Future<Product?> getByConsumerCode(
+      String companyId, String consumerCode) async {
     final products = await listProducts(companyId);
     for (final product in products) {
       if ((product.consumerCode ?? '') == consumerCode) return product;
@@ -84,7 +86,8 @@ class InMemoryProductsRepository implements ProductsRepository {
   }
 
   @override
-  Future<Product?> decrementStock(String companyId, String productId, int quantity) async {
+  Future<Product?> decrementStock(
+      String companyId, String productId, int quantity) async {
     final p = await getById(companyId, productId);
     if (p == null) return null;
     if (p.stock < quantity) return null;

@@ -1,8 +1,5 @@
 allprojects {
     repositories {
-        maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
         google()
         mavenCentral()
     }
@@ -28,8 +25,6 @@ tasks.register<Delete>("clean") {
 
 buildscript {
     repositories {
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
         google()
         mavenCentral()
     }

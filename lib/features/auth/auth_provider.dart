@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,17 +19,20 @@ final authProvider = NotifierProvider<AuthNotifier, AuthState?>(AuthNotifier.new
 class AuthNotifier extends Notifier<AuthState?> {
   final http.Client _client = http.Client();
   static final RegExp _jsonLike = RegExp(r'^\s*[\{\[]');
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   @override
   AuthState? build() => ref.watch(initialAuthStateProvider);
 
   Future<void> _persist(AuthState? next) async {
-    final prefs = await SharedPreferences.getInstance();
     if (next == null) {
-      await prefs.remove(kAuthStorageKey);
+      await _secureStorage.delete(key: kAuthStorageKey);
       return;
     }
-    await prefs.setString(kAuthStorageKey, jsonEncode(next.toJson()));
+    await _secureStorage.write(
+      key: kAuthStorageKey,
+      value: jsonEncode(next.toJson()),
+    );
   }
 
   Future<void> setSession(AuthState next) async {
@@ -263,6 +267,21 @@ class AuthNotifier extends Notifier<AuthState?> {
     final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
     final state = AuthState.fromJson(json);
     return state.isAuthenticated ? state : null;
+  }
+
+  /// Lit la session depuis KeyStore/Keychain. Les anciennes installations
+  /// migrent une seule fois l'état SharedPreferences, puis l'effacent.
+  static Future<AuthState?> loadStoredState() async {
+    var raw = await _secureStorage.read(key: kAuthStorageKey);
+    if (raw == null || raw.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      raw = prefs.getString(kAuthStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        await _secureStorage.write(key: kAuthStorageKey, value: raw);
+        await prefs.remove(kAuthStorageKey);
+      }
+    }
+    return decodeStoredState(raw);
   }
 
   String _decodeMessageResponse(http.Response res) {

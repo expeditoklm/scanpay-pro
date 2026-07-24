@@ -10,6 +10,9 @@ build/
 
 # Android
 **/android/**/local.properties
+**/android/key.properties
+**/android/*.jks
+**/android/*.keystore
 **/android/.gradle/
 **/android/captures/
 

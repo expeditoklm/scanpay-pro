@@ -16,8 +16,10 @@ class ProductsRepositoryWithExtras implements ProductsRepository {
     );
     if (extras == null) return product;
     return product.copyWith(
-      referenceImagePath: extras.referenceImagePath ?? product.referenceImagePath,
-      referenceImageHash: extras.referenceImageHash ?? product.referenceImageHash,
+      referenceImagePath:
+          extras.referenceImagePath ?? product.referenceImagePath,
+      referenceImageHash:
+          extras.referenceImageHash ?? product.referenceImageHash,
     );
   }
 
@@ -72,7 +74,8 @@ class ProductsRepositoryWithExtras implements ProductsRepository {
   }
 
   @override
-  Future<Product?> getByConsumerCode(String companyId, String consumerCode) async {
+  Future<Product?> getByConsumerCode(
+      String companyId, String consumerCode) async {
     final product = await _delegate.getByConsumerCode(companyId, consumerCode);
     if (product == null) return null;
     return _apply(product);
@@ -81,7 +84,8 @@ class ProductsRepositoryWithExtras implements ProductsRepository {
   @override
   Future<Product> upsert(Product product) async {
     final saved = await _delegate.upsert(product);
-    if (product.referenceImagePath != null || product.referenceImageHash != null) {
+    if (product.referenceImagePath != null ||
+        product.referenceImageHash != null) {
       final existing = await _extras.get(
         companyId: saved.companyId,
         productId: saved.id,

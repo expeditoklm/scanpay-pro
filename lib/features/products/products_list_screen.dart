@@ -111,7 +111,9 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                       ),
                     ),
                     child: Icon(
-                      isNetworkError ? Icons.wifi_off_rounded : Icons.error_outline,
+                      isNetworkError
+                          ? Icons.wifi_off_rounded
+                          : Icons.error_outline,
                       color: Colors.white,
                       size: 30,
                     ),
@@ -134,7 +136,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
-                  onPressed: _reloadProducts,
+                    onPressed: _reloadProducts,
                     icon: const Icon(Icons.refresh_rounded),
                     label: const Text('Recharger'),
                   ),
@@ -152,150 +154,155 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         return Stack(
           children: [
             RefreshIndicator(
-          onRefresh: _reloadProducts,
-          child: ListView(
-            controller: _scrollCtrl,
-            // 88 = nav bar (78) + marge ; + bottom safe-area pour les encoche bas
-            padding: EdgeInsets.fromLTRB(
-              16, 14, 16,
-              MediaQuery.of(context).padding.bottom + 88,
-            ),
-            children: [
-              _ProductsHero(
-                pendingCount: pendingCount,
-                query: _query,
-                searchCtrl: _searchCtrl,
-                selectionCount: selectionCount,
-                isSharing: _isSharing,
-                onQueryChanged: (value) {
-                  setState(() {
-                    _query = value;
-                    _selectedProductIds.clear();
-                  });
-                  _scheduleSearch();
-                },
-                onShareSelection: selectionCount == 0
-                    ? null
-                    : () => _shareSelectedProducts(products),
-                onClearSelection: selectionCount == 0 ? null : _clearSelection,
+              onRefresh: _reloadProducts,
+              child: ListView(
+                controller: _scrollCtrl,
+                // 88 = nav bar (78) + marge ; + bottom safe-area pour les encoche bas
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  14,
+                  16,
+                  MediaQuery.of(context).padding.bottom + 88,
+                ),
+                children: [
+                  _ProductsHero(
+                    pendingCount: pendingCount,
+                    query: _query,
+                    searchCtrl: _searchCtrl,
+                    selectionCount: selectionCount,
+                    isSharing: _isSharing,
+                    onQueryChanged: (value) {
+                      setState(() {
+                        _query = value;
+                        _selectedProductIds.clear();
+                      });
+                      _scheduleSearch();
+                    },
+                    onShareSelection: selectionCount == 0
+                        ? null
+                        : () => _shareSelectedProducts(products),
+                    onClearSelection:
+                        selectionCount == 0 ? null : _clearSelection,
+                  ),
+                  const SizedBox(height: 16),
+                  if (productsPage.total == 0 && _query.trim().isEmpty)
+                    _EmptyProductsState(
+                      onCreate: () => _openForm(context),
+                      onImport: () => _openImport(context),
+                    )
+                  else if (products.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(28),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(color: const Color(0xFFD7E2F2)),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x0E0F172A),
+                                blurRadius: 18,
+                                offset: Offset(0, 7),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 60,
+                                height: 60,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Icon(
+                                  Icons.search_off_rounded,
+                                  size: 30,
+                                  color: Color(0xFF94A3B8),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Aucun résultat',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Aucun produit trouvé pour\n"$_query"',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF64748B),
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                  else ...[
+                    if (selectionCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          'Touchez pour cocher ou decocher les produits a partager.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                    ...products.map(
+                      (product) => Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: _ProductCard(
+                          product: product,
+                          isSelected: _selectedProductIds.contains(product.id),
+                          selectionMode: selectionCount > 0,
+                          onTap: () => _handleProductTap(context, product),
+                          onLongPress: () => _toggleSelection(product.id),
+                        ),
+                      ),
+                    ),
+                    // ── Pied de liste : total + retour en haut ──────────────
+                    _ListFooter(
+                      totalCount: productsPage.total,
+                      displayedCount: products.length,
+                    ),
+                    if (_isLoadingMore)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 18),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (_loadMoreError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 18),
+                        child: Center(
+                          child: TextButton.icon(
+                            onPressed: _loadNextPage,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text(
+                                'Réessayer de charger les produits suivants'),
+                          ),
+                        ),
+                      )
+                    else if (!_hasMore && products.isNotEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 18),
+                        child: Center(
+                            child: Text('Tous les produits sont affichés.')),
+                      ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 16),
-              if (productsPage.total == 0 && _query.trim().isEmpty)
-                _EmptyProductsState(
-                  onCreate: () => _openForm(context),
-                  onImport: () => _openImport(context),
-                )
-              else if (products.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(28),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(color: const Color(0xFFD7E2F2)),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0E0F172A),
-                            blurRadius: 18,
-                            offset: Offset(0, 7),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Icon(
-                              Icons.search_off_rounded,
-                              size: 30,
-                              color: Color(0xFF94A3B8),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Aucun résultat',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Aucun produit trouvé pour\n"$_query"',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF64748B),
-                              height: 1.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              else ...[
-                if (selectionCount > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      'Touchez pour cocher ou decocher les produits a partager.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFF64748B),
-                      ),
-                    ),
-                  ),
-                ...products.map(
-                  (product) => Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: _ProductCard(
-                      product: product,
-                      isSelected: _selectedProductIds.contains(product.id),
-                      selectionMode: selectionCount > 0,
-                      onTap: () => _handleProductTap(context, product),
-                      onLongPress: () => _toggleSelection(product.id),
-                    ),
-                  ),
-                ),
-                // ── Pied de liste : total + retour en haut ──────────────
-                _ListFooter(
-                  totalCount: productsPage.total,
-                  displayedCount: products.length,
-                ),
-                if (_isLoadingMore)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 18),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (_loadMoreError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 18),
-                    child: Center(
-                      child: TextButton.icon(
-                        onPressed: _loadNextPage,
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('Réessayer de charger les produits suivants'),
-                      ),
-                    ),
-                  )
-                else if (!_hasMore && products.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 18),
-                    child: Center(child: Text('Tous les produits sont affichés.')),
-                  ),
-              ],
-            ],
-          ),
-        ),
+            ),
             // ── FAB flottant (toujours visible) ───────────────────────
             if (_showScrollTop)
               Positioned(
@@ -430,16 +437,18 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     if (mounted) setState(() => _isLoadingMore = !initial);
     try {
       final nextPage = _page + 1;
-      final result = await ref.read(productsRepositoryProvider).listProductsPage(
-        companyId: auth.companyId,
-        page: nextPage,
-        perPage: _perPage,
-        query: _query,
-      );
+      final result =
+          await ref.read(productsRepositoryProvider).listProductsPage(
+                companyId: auth.companyId,
+                page: nextPage,
+                perPage: _perPage,
+                query: _query,
+              );
       if (!mounted) return;
       final knownIds = _products.map((product) => product.id).toSet();
       setState(() {
-        _products.addAll(result.items.where((product) => knownIds.add(product.id)));
+        _products
+            .addAll(result.items.where((product) => knownIds.add(product.id)));
         _page = result.page;
         _total = result.total;
         _hasMore = result.page < result.totalPages;
@@ -451,7 +460,9 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       // Si l'écran est grand et que la page ne remplit pas encore la hauteur,
       // charge immédiatement la suivante sans attendre un geste de défilement.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scrollCtrl.hasClients && _scrollCtrl.position.extentAfter < 280) {
+        if (mounted &&
+            _scrollCtrl.hasClients &&
+            _scrollCtrl.position.extentAfter < 280) {
           _loadNextPage();
         }
       });
@@ -486,7 +497,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         SnackBar(
           content: Text(
             '${selectedProducts.length} image${selectedProducts.length > 1 ? 's' : ''} prepare${selectedProducts.length > 1 ? 's' : ''} pour un seul envoi WhatsApp.',
-              textAlign: TextAlign.center,),
+            textAlign: TextAlign.center,
+          ),
         ),
       );
       _clearSelection();
@@ -763,7 +775,9 @@ class _ProductCard extends StatelessWidget {
             color: isSelected ? const Color(0xFFE8F7EF) : Colors.white,
             borderRadius: BorderRadius.circular(26),
             border: Border.all(
-              color: isSelected ? const Color(0xFF25D366) : const Color(0xFFD7E2F2),
+              color: isSelected
+                  ? const Color(0xFF25D366)
+                  : const Color(0xFFD7E2F2),
               width: isSelected ? 1.6 : 1,
             ),
             boxShadow: const [
@@ -802,7 +816,9 @@ class _ProductCard extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          product.name.isEmpty ? '?' : product.name[0].toUpperCase(),
+                          product.name.isEmpty
+                              ? '?'
+                              : product.name[0].toUpperCase(),
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
