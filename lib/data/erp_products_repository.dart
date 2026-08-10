@@ -491,7 +491,13 @@ class ErpProductsRepository implements ProductsRepository {
         await _persistCache(companyId);
         return product;
       }
-      if (res.statusCode == 404) return null;
+      if (res.statusCode == 404) {
+        // Le serveur est la source de vérité. Un produit supprimé depuis le
+        // dashboard ne doit jamais être ressuscité par le cache mobile.
+        _cache.remove(productId);
+        await _persistCache(companyId);
+        return null;
+      }
       throw Exception('ERP HTTP ${res.statusCode}');
     } catch (_) {
       return _cache[productId];
@@ -502,11 +508,8 @@ class ErpProductsRepository implements ProductsRepository {
   Future<Product?> getBySku(String companyId, String sku) async {
     final s = sku.trim();
     if (s.isEmpty) return null;
-    for (final product in _cache.values) {
-      if (product.companyId == companyId && (product.sku ?? '') == s) {
-        return product;
-      }
-    }
+    // Rafraîchit d'abord le catalogue. En cas de connexion disponible, les
+    // suppressions faites sur le web sont ainsi appliquées avant le scan.
     return (await listProducts(companyId))
         .cast<Product?>()
         .firstWhere((p) => (p!.sku ?? '') == s, orElse: () => null);
@@ -517,12 +520,8 @@ class ErpProductsRepository implements ProductsRepository {
       String companyId, String consumerCode) async {
     final code = consumerCode.trim();
     if (code.isEmpty) return null;
-    for (final product in _cache.values) {
-      if (product.companyId == companyId &&
-          (product.consumerCode ?? '') == code) {
-        return product;
-      }
-    }
+    // Ne pas valider un ancien code uniquement parce qu'il existe encore dans
+    // le stockage local : le catalogue distant est consulté en priorité.
     return (await listProducts(companyId))
         .cast<Product?>()
         .firstWhere((p) => (p!.consumerCode ?? '') == code, orElse: () => null);

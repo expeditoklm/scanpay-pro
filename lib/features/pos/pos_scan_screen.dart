@@ -148,10 +148,10 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
             await _resolveProduct(raw, auth.companyId, auth.secretKey);
         if (product == null) {
           await _feedback.scanWarning();
-          _setMessage(
-            'Produit introuvable pour ce code. Enregistrez-le d abord depuis Produits > Nouveau produit.',
-            isError: true,
-          );
+          const message =
+              'Produit introuvable. Ce code-barres n\'est associé à aucun produit actif.';
+          _setMessage(message, isError: true);
+          _showScanFlash(message);
           continue;
         }
 
@@ -181,15 +181,23 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
       return product;
     }
 
-    return await repo.getByConsumerCode(companyId, raw) ??
-        await repo.getBySku(companyId, raw);
+    // Un seul rafraîchissement distant pour les codes-barres classiques. Cela
+    // évite de valider un produit supprimé encore présent dans le cache et
+    // évite aussi deux appels réseau successifs quand le code est inconnu.
+    final products = await repo.listProducts(companyId);
+    for (final product in products) {
+      if (product.consumerCode == raw || product.sku == raw) return product;
+    }
+    return null;
   }
 
   Future<void> _addProduct(Product product) async {
     // ── Stock initial nul ────────────────────────────────────────────────
     if (product.stock < 1) {
       await _feedback.scanWarning();
-      _setMessage('Stock épuisé pour ${product.name}', isError: true);
+      final message = 'Stock épuisé pour ${product.name}';
+      _setMessage(message, isError: true);
+      _showScanFlash(message);
       return;
     }
 
@@ -226,6 +234,36 @@ class _PosScanScreenState extends ConsumerState<PosScanScreen> {
       _message = message;
       _messageIsError = isError;
     });
+  }
+
+  void _showScanFlash(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+          backgroundColor: const Color(0xFFFF9800),
+          elevation: 8,
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 17),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          content: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+          ),
+        ),
+      );
   }
 
   Future<void> _openCart() async {
